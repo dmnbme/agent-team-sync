@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-team-sync"
-version = "0.1.1"
+version = "0.1.2"
 description = "Keep a small team and their AI coding agents in sync: git around sessions, a shared drive for big files, Postgres leases for mutual exclusion."
 readme = "README.md"
 license = { text = "MIT" }

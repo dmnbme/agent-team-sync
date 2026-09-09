@@ -37,7 +37,7 @@ the rebase is aborted, local work stays, a marker is written, a desktop notifica
 ## Install
 
 ```bash
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.1"
+pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.2"
 python3 -m team_sync version
 ```
 
@@ -80,7 +80,7 @@ git add -A && git commit -m "team-sync" && git push
 ## Set up a machine (each member, once)
 
 ```bash
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.1"
+pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.2"
 git clone <team repo> ~/team && cd ~/team
 cp ~/Downloads/env.team.txt .env.team        # the file the maintainer sent
 team-sync start                              # installs the pre-commit gate, prints the summary

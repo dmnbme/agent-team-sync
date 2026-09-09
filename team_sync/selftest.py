@@ -7,7 +7,7 @@ import subprocess
 import sys
 import tempfile
 
-from .config import Config
+from .config import CONFIG_NAME, Config
 
 FAILS = []
 
@@ -31,6 +31,8 @@ def run(cfg, keep=False):
     for who in ('alice', 'bob'):
         sh(tmp, 'git', 'clone', '-q', 'origin.git', who)
         sh(tmp / who, 'git', 'config', 'user.name', who); sh(tmp / who, 'git', 'config', 'user.email', f'{who}@selftest.local')
+        if (cfg.repo / CONFIG_NAME).exists():                      # use the working-tree config even if not committed yet
+            shutil.copy2(cfg.repo / CONFIG_NAME, tmp / who / CONFIG_NAME)
         (tmp / who / cfg.data['env_file']).write_text('\n'.join([f"{cfg.key('WHO')}={who}"] + env_lines) + '\n', encoding='utf-8')
     A, B = tmp / 'alice', tmp / 'bob'
     ts = lambda cwd, *a, stdin=None: sh(cwd, sys.executable, '-m', 'team_sync', *a, stdin=stdin)

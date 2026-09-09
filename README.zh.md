@@ -15,7 +15,7 @@
 ## 安装
 
 ```bash
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.1"
+pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.2"
 python3 -m team_sync version
 ```
 
@@ -38,7 +38,7 @@ team-sync autosync on
 ## 成员配置机器(一次)
 
 ```bash
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.1"
+pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.2"
 git clone <团队仓库> ~/team && cd ~/team
 cp ~/Downloads/env.team.txt .env.team
 team-sync start && team-sync autosync on && team-sync paths

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2 (2026-09-09)
+
+- selftest: clones get the working-tree `team-sync.json` even when it is not committed yet.
+
 ## 0.1.1 (2026-09-09)
 
 - Fix: message lookup crashed on strings that take a `key` argument (session summary failed to print).
