@@ -36,10 +36,14 @@ the rebase is aborted, local work stays, a marker is written, a desktop notifica
 
 ## Install
 
+Two ways. The checkout needs git only and works with whatever `python3` a hook happens to get:
+
 ```bash
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.2"
-python3 -m team_sync version
+git clone --branch v0.1.3 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # members
+pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.3"  # or: maintainers, gives the team-sync command
 ```
+
+Inside a repo set up with `init`, everything runs through the committed launcher `bin/team_sync.py`, which finds the package either way.
 
 No dependencies beyond the standard library. Python 3.9+ (the one that ships with macOS is enough). Windows: install
 Python, and make sure a `python3` command exists (a copy of `python.exe` named `python3.exe` next to it works).
@@ -80,7 +84,7 @@ git add -A && git commit -m "team-sync" && git push
 ## Set up a machine (each member, once)
 
 ```bash
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.2"
+pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.3"
 git clone <team repo> ~/team && cd ~/team
 cp ~/Downloads/env.team.txt .env.team        # the file the maintainer sent
 team-sync start                              # installs the pre-commit gate, prints the summary

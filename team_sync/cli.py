@@ -83,6 +83,13 @@ def main(argv=None):
             print('database ', ' | '.join(f"{cfg.key(k)} {'✓' if e.get(cfg.key(k)) else '✗'}" for k in ('SUPABASE_URL', 'SUPABASE_ANON_KEY', 'TEAM_KEY')))
             print('version  ', __version__, f"(config wants {cfg.data['version']})" if cfg.data.get('version') else ''); return 0
         if ns.cmd == 'upgrade':
+            import os, pathlib
+            pkg = pathlib.Path(os.environ.get('TEAM_SYNC_PKG') or pathlib.Path.home() / '.team-sync' / 'pkg')
+            want = cfg.data.get('version')
+            if (pkg / '.git').exists() and want:
+                r = subprocess.run(['git', '-C', str(pkg), 'fetch', '-q', '--tags', 'origin'])
+                r = subprocess.run(['git', '-C', str(pkg), 'checkout', '-q', f'v{want}']) if r.returncode == 0 else r
+                from .msg import t; print(t(cfg.lang, 'upgraded', version=want) if r.returncode == 0 else f'✗ git exit {r.returncode}'); return r.returncode
             want = cfg.data.get('version'); src = cfg.data.get('source') or 'agent-team-sync'
             spec = f'{src}@v{want}' if want and src.startswith('git+') else (f'agent-team-sync=={want}' if want else src)
             r = subprocess.run([sys.executable, '-m', 'pip', 'install', '--user', '--upgrade', '--quiet', spec] if not src.startswith('git+') else [sys.executable, '-m', 'pip', 'install', '--user', '--upgrade', '--quiet', f'agent-team-sync @ {spec}'])

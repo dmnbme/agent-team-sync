@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-team-sync"
-version = "0.1.2"
+version = "0.1.3"
 description = "Keep a small team and their AI coding agents in sync: git around sessions, a shared drive for big files, Postgres leases for mutual exclusion."
 readme = "README.md"
 license = { text = "MIT" }
@@ -29,4 +29,4 @@ Homepage = "https://github.com/dmnbme/agent-team-sync"
 include = ["team_sync*"]
 
 [tool.setuptools.package-data]
-team_sync = ["resources/*", "resources/hooks/*"]
+team_sync = ["resources/*", "resources/hooks/*", "resources/shim.py"]

@@ -25,6 +25,8 @@ def _python():
 def on(cfg):
     interval = int(cfg.data['sync'].get('autosync_interval_sec', 300)); cfg.state_dir.mkdir(parents=True, exist_ok=True)
     py, repo, log = _python(), str(cfg.repo), str(_log(cfg))
+    shim = cfg.repo / 'bin' / 'team_sync.py'
+    args = [str(shim), 'stop'] if shim.exists() else ['-m', 'team_sync', 'stop']
     sysname = platform.system()
     if sysname == 'Darwin':
         plist = os.path.expanduser(f'~/Library/LaunchAgents/{LABEL}.{cfg.repo.name}.plist')
@@ -34,7 +36,7 @@ def on(cfg):
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>Label</key><string>{LABEL}.{cfg.repo.name}</string>
-  <key>ProgramArguments</key><array><string>{py}</string><string>-m</string><string>team_sync</string><string>stop</string></array>
+  <key>ProgramArguments</key><array><string>{py}</string>{''.join(f'<string>{a}</string>' for a in args)}</array>
   <key>WorkingDirectory</key><string>{repo}</string>
   <key>StartInterval</key><integer>{interval}</integer>
   <key>RunAtLoad</key><true/>
@@ -53,7 +55,7 @@ def on(cfg):
             print(r.stderr.strip()); return 1
     elif sysname == 'Windows':
         task = f'team-sync autosync {cfg.repo.name}'
-        ps = (f"$a = New-ScheduledTaskAction -Execute '{py}' -Argument '-m team_sync stop' -WorkingDirectory '{repo}'; "
+        ps = (f"$a = New-ScheduledTaskAction -Execute '{py}' -Argument '{' '.join(chr(34) + a + chr(34) if ' ' in a else a for a in args)}' -WorkingDirectory '{repo}'; "
               f"$tr = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Seconds {interval}) -RepetitionDuration ([TimeSpan]::MaxValue); "
               "$s = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 10) -MultipleInstances IgnoreNew -StartWhenAvailable; "
               f"Register-ScheduledTask -TaskName '{task}' -Action $a -Trigger $tr -Settings $s -Force | Out-Null")
@@ -63,7 +65,7 @@ def on(cfg):
     elif sysname == 'Linux':
         d = os.path.expanduser('~/.config/systemd/user'); os.makedirs(d, exist_ok=True)
         name = f'team-sync-{cfg.repo.name}'
-        open(f'{d}/{name}.service', 'w').write(f'[Unit]\nDescription=team-sync autosync {repo}\n[Service]\nType=oneshot\nWorkingDirectory={repo}\nEnvironment=TEAM_SYNC_REPO={repo}\nExecStart={py} -m team_sync stop\nStandardOutput=append:{log}\nStandardError=append:{log}\n')
+        open(f'{d}/{name}.service', 'w').write(f'[Unit]\nDescription=team-sync autosync {repo}\n[Service]\nType=oneshot\nWorkingDirectory={repo}\nEnvironment=TEAM_SYNC_REPO={repo}\nExecStart={py} {' '.join(args)}\nStandardOutput=append:{log}\nStandardError=append:{log}\n')
         open(f'{d}/{name}.timer', 'w').write(f'[Unit]\nDescription=team-sync autosync timer\n[Timer]\nOnBootSec=1min\nOnUnitActiveSec={interval}s\n[Install]\nWantedBy=timers.target\n')
         subprocess.run(['systemctl', '--user', 'daemon-reload'], capture_output=True)
         r = subprocess.run(['systemctl', '--user', 'enable', '--now', f'{name}.timer'], capture_output=True, text=True)

@@ -1,7 +1,7 @@
 {
   "team-sync": {
     "enabled": true,
-    "PreInvocation": [ { "hooks": [ { "type": "command", "command": "python3 -m team_sync hook antigravity pre_invocation", "timeout": 60 } ] } ],
-    "Stop":          [ { "hooks": [ { "type": "command", "command": "python3 -m team_sync hook antigravity stop", "timeout": 120 } ] } ]
+    "PreInvocation": [ { "hooks": [ { "type": "command", "command": "python3 bin/team_sync.py hook antigravity pre_invocation", "timeout": 60 } ] } ],
+    "Stop":          [ { "hooks": [ { "type": "command", "command": "python3 bin/team_sync.py hook antigravity stop", "timeout": 120 } ] } ]
   }
 }

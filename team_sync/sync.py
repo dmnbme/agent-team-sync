@@ -91,7 +91,10 @@ def notify(cfg, text):
 
 def ensure_hook(cfg):
     hook = cfg.repo / '.git' / 'hooks' / 'pre-commit'
-    want = '#!/bin/sh\nexec python3 -m team_sync gate\n'
+    shim = cfg.repo / 'bin' / 'team_sync.py'
+    py = sys.executable.replace('\\', '/')                       # the interpreter that has team_sync; git hooks run with an arbitrary PATH
+    entry = f'"$(git rev-parse --show-toplevel)/bin/team_sync.py"' if shim.exists() else '-m team_sync'
+    want = f'#!/bin/sh\nPY="{py}"\n[ -x "$PY" ] && exec "$PY" {entry} gate\nexec python3 {entry} gate\n'
     if not hook.exists() or hook.read_text(encoding='utf-8', errors='replace') != want:
         hook.parent.mkdir(parents=True, exist_ok=True)
         hook.write_text(want, encoding='utf-8')
