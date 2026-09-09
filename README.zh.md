@@ -17,8 +17,8 @@
 两种方式。checkout 只需要 git,而且不挑 hook 拿到的是哪个 `python3`:
 
 ```bash
-git clone --branch v0.1.3 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # 成员
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.3"  # 或:维护者,得到 team-sync 命令
+git clone --branch v0.1.4 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # 成员
+pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.4"  # 或:维护者,得到 team-sync 命令
 ```
 
 用 `init` 配置过的仓库里,所有东西都走提交在仓库里的引导脚本 `bin/team_sync.py`,两种装法它都能找到包。
@@ -42,7 +42,7 @@ team-sync autosync on
 ## 成员配置机器(一次)
 
 ```bash
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.3"
+pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.4"
 git clone <团队仓库> ~/team && cd ~/team
 cp ~/Downloads/env.team.txt .env.team
 team-sync start && team-sync autosync on && team-sync paths

@@ -5,4 +5,4 @@ Three layers, each doing one job:
   file drive large files                           (only the path resolution lives here)
   Postgres  leases (mutual exclusion) and cursors  (Supabase or any Postgres; see resources/schema.sql)
 """
-__version__ = '0.1.3'
+__version__ = '0.1.4'

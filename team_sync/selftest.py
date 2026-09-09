@@ -18,8 +18,13 @@ def check(name, ok, detail=''):
         FAILS.append(name)
 
 
+import os
+
+CLEAN_ENV = {k: v for k, v in os.environ.items() if k not in ('TEAM_SYNC_REPO', 'CLAUDE_PROJECT_DIR', 'CODEBUDDY_PROJECT_DIR')}
+
+
 def sh(cwd, *args, stdin=None):
-    r = subprocess.run(list(args), cwd=cwd, capture_output=True, text=True, input=stdin, encoding='utf-8', errors='replace')
+    r = subprocess.run(list(args), cwd=cwd, capture_output=True, text=True, input=stdin, encoding='utf-8', errors='replace', env=CLEAN_ENV)
     return (r.stdout + r.stderr).strip()
 
 
@@ -35,7 +40,7 @@ def run(cfg, keep=False):
             shutil.copy2(cfg.repo / CONFIG_NAME, tmp / who / CONFIG_NAME)
         (tmp / who / cfg.data['env_file']).write_text('\n'.join([f"{cfg.key('WHO')}={who}"] + env_lines) + '\n', encoding='utf-8')
     A, B = tmp / 'alice', tmp / 'bob'
-    ts = lambda cwd, *a, stdin=None: sh(cwd, sys.executable, '-m', 'team_sync', *a, stdin=stdin)
+    ts = lambda cwd, *a, stdin=None: sh(cwd, sys.executable, '-m', 'team_sync', '--repo', str(cwd), *a, stdin=stdin)   # explicit repo: never touch the real one
     jdir = pathlib.Path(cfg.data['journal']).parent
     fa, fb = A / jdir / 'selftest_note.md', B / jdir / 'selftest_note.md'
 

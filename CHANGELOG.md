@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4 (2026-09-09)
+
+- Fix: child processes inherited the repo-locating variables (`TEAM_SYNC_REPO` and agent project-dir variables), so `selftest` clones could act on the real repo. The CLI now drops them after resolving the repo, and selftest passes `--repo` explicitly with a scrubbed environment.
+
 ## 0.1.3 (2026-09-09)
 
 - Launcher `bin/team_sync.py` (written by `init`): hooks, the pre-commit gate and autosync no longer depend on which `python3` is first on PATH. Falls back to a checkout at `~/.team-sync/pkg`, so members need git only, not pip.

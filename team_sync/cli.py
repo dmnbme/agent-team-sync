@@ -45,6 +45,9 @@ def main(argv=None):
     if ns.cmd == 'version':
         print(__version__); return 0
     cfg = Config(ns.repo)
+    import os
+    for var in ('TEAM_SYNC_REPO', 'CLAUDE_PROJECT_DIR', 'CODEBUDDY_PROJECT_DIR'):   # resolved now; children (selftest clones, scripts) must not inherit them
+        os.environ.pop(var, None)
     if sys.stdout is None or sys.stderr is None:          # pythonw (Windows scheduler): no console → log file
         cfg.state_dir.mkdir(parents=True, exist_ok=True)
         log = open(cfg.state_dir / 'autosync.log', 'a', encoding='utf-8'); sys.stdout = sys.stderr = log
