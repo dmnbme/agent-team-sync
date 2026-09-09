@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-team-sync"
+version = "0.1.0"
+description = "Keep a small team and their AI coding agents in sync: git around sessions, a shared drive for big files, Postgres leases for mutual exclusion."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+authors = [{ name = "Ding Mai" }]
+keywords = ["ai-agents", "claude-code", "antigravity", "team", "git", "supabase", "locks"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Topic :: Software Development :: Version Control :: Git",
+]
+dependencies = []
+
+[project.scripts]
+team-sync = "team_sync.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/dmnbme/agent-team-sync"
+
+[tool.setuptools.packages.find]
+include = ["team_sync*"]
+
+[tool.setuptools.package-data]
+team_sync = ["resources/*", "resources/hooks/*"]
