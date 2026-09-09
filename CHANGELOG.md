@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1 (2026-09-09)
+
+- Fix: message lookup crashed on strings that take a `key` argument (session summary failed to print).
+
 ## 0.1.0 (2026-09-09)
 
 First release, extracted from a three-person team's internal tooling.

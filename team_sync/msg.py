@@ -101,7 +101,7 @@ _T = {
 }
 
 
-def t(lang, key, **kw):
+def t(lang, name, **kw):
     table = _T.get(lang) or _T['en']
-    s = table.get(key) or _T['en'].get(key) or key
+    s = table.get(name) or _T['en'].get(name) or name
     return s.format(**kw) if kw else s
