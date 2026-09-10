@@ -84,7 +84,12 @@ def main(argv=None):
             print('drive    ', cfg.drive() or ('(not configured)' if not (cfg.data.get('drive') or {}).get('root_name') else '(not found)'))
             print('identity ', cfg.holder())
             print('database ', ' | '.join(f"{cfg.key(k)} {'✓' if e.get(cfg.key(k)) else '✗'}" for k in ('SUPABASE_URL', 'SUPABASE_ANON_KEY', 'TEAM_KEY')))
-            print('version  ', __version__, f"(config wants {cfg.data['version']})" if cfg.data.get('version') else ''); return 0
+            print('version  ', __version__, f"(config wants {cfg.data['version']})" if cfg.data.get('version') else '')
+            miss = [cfg.key(k) for k in ('SUPABASE_URL', 'SUPABASE_ANON_KEY', 'TEAM_KEY') if not e.get(cfg.key(k))]
+            if miss:
+                print(f"\n⚠ {cfg.env_file.name} " + ('is not here' if not cfg.env_file.exists() else 'is missing ' + ', '.join(miss)) +
+                      '. Ask the maintainer for the file; leases and shared cursors stay off until it is in place.')
+            return 0
         if ns.cmd == 'upgrade':
             import os, pathlib
             pkg = pathlib.Path(os.environ.get('TEAM_SYNC_PKG') or pathlib.Path.home() / '.team-sync' / 'pkg')

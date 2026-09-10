@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.5 (2026-09-10)
+
+- A member whose `.env.team` is absent or half-filled now gets a message saying so, in `start` and in `paths`. It used to report only the missing team key, which sent people asking for one line when the whole file was missing.
+- `bin/team_sync.py` is written executable by `init`.
+
 ## 0.1.4 (2026-09-09)
 
 - Fix: child processes inherited the repo-locating variables (`TEAM_SYNC_REPO` and agent project-dir variables), so `selftest` clones could act on the real repo. The CLI now drops them after resolving the repo, and selftest passes `--repo` explicitly with a scrubbed environment.

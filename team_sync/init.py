@@ -22,6 +22,10 @@ def run(cfg, ns):
     p = conf['env_prefix']
     _write(cfg.repo / '.env.team.example', f'# copy to .env.team (git-ignored); the maintainer sends one per member\n{p}_WHO=alice\n{p}_SUPABASE_URL=https://xxxx.supabase.co\n{p}_SUPABASE_ANON_KEY=\n{p}_TEAM_KEY=\n# {p}_DRIVE_ROOT=   # only if auto-detection fails\n', created)
     _write(cfg.repo / 'bin' / 'team_sync.py', (RES / 'shim.py').read_text(encoding='utf-8'), created)
+    try:
+        (cfg.repo / 'bin' / 'team_sync.py').chmod(0o755)
+    except OSError:
+        pass
     _write(cfg.repo / '.claude' / 'settings.json', (RES / 'hooks' / 'claude.settings.json').read_text(encoding='utf-8'), created)
     _write(cfg.repo / '.agents' / 'hooks.json', (RES / 'hooks' / 'antigravity.hooks.json').read_text(encoding='utf-8'), created)
     _write(cfg.repo / '.codebuddy' / 'settings.json', (RES / 'hooks' / 'codebuddy.settings.json').read_text(encoding='utf-8'), created)

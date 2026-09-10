@@ -171,7 +171,13 @@ def _start_body(cfg, pull_ok=True):
         except Exception as e:
             lines.append(t(cfg.lang, 'leases_error', err=e))
     else:
-        lines.append(t(cfg.lang, 'leases_unconfigured', key=cfg.key('TEAM_KEY'), env_file=cfg.env_file.name))
+        missing = [cfg.key(n) for n in ('SUPABASE_URL', 'SUPABASE_ANON_KEY', 'TEAM_KEY') if not cfg.get(n)]
+        if not cfg.env_file.exists():
+            lines.append(t(cfg.lang, 'env_absent', env_file=cfg.env_file.name))
+        elif len(missing) > 1:
+            lines.append(t(cfg.lang, 'env_incomplete', missing=', '.join(missing), env_file=cfg.env_file.name))
+        else:
+            lines.append(t(cfg.lang, 'leases_unconfigured', key=cfg.key('TEAM_KEY'), env_file=cfg.env_file.name))
     try:
         from .fingerprint import summary_line
         fp = summary_line(cfg, quick=True)
