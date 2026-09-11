@@ -1,11 +1,27 @@
 {
   "hooks": {
     "SessionStart": [
-      { "matcher": "startup|resume|clear",
-        "hooks": [ { "type": "command", "command": "python3 bin/team_sync.py start", "timeout": 60 } ] }
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -f bin/team_sync.py ] && python3 bin/team_sync.py start || true",
+            "timeout": 60
+          }
+        ]
+      }
     ],
     "SessionEnd": [
-      { "hooks": [ { "type": "command", "command": "python3 bin/team_sync.py stop", "timeout": 120 } ] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -f bin/team_sync.py ] && python3 bin/team_sync.py stop || true",
+            "timeout": 120
+          }
+        ]
+      }
     ]
   }
 }
