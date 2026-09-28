@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.6 (2026-09-28)
+
+- Fix: a pull that failed because the remote was unreachable (no network, DNS, timeout) was reported as a merge conflict, with a desktop notification on every autosync run and a conflict marker shown at the next start. It is now reported as "sync skipped", with no marker and no notification.
+- Fix: after a failed pull, `stash pop` ran unconditionally and could apply an unrelated older stash. It now pops only a stash that the failed pull itself left behind.
+
 ## 0.1.5 (2026-09-10)
 
 - A member whose `.env.team` is absent or half-filled now gets a message saying so, in `start` and in `paths`. It used to report only the missing team key, which sent people asking for one line when the whole file was missing.

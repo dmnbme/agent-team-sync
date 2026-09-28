@@ -116,17 +116,30 @@ def note(cfg, text, auto=False):
         f.write(f"- {dt.datetime.now():%Y-%m-%d %H:%M} · {cfg.who()} · {'auto · ' if auto else ''}{text.strip()}\n")
 
 
+NET_ERRORS = ('Could not resolve host', 'Failed to connect', 'Connection timed out', 'Operation timed out',
+              'Connection refused', 'Connection reset', 'Network is unreachable', 'Could not read from remote repository',
+              'SSL_ERROR', 'SSL_connect', 'gnutls_handshake', 'The requested URL returned error: 5', 'early EOF')
+
+
 def pull(cfg):
     if git(cfg, 'remote', 'get-url', 'origin').returncode != 0:
         return t(cfg.lang, 'no_origin')
+    stashes = lambda: len(git(cfg, 'stash', 'list').stdout.splitlines())
+    before = stashes()
     r = git(cfg, 'pull', '--rebase', '--autostash', '--quiet')
     marker = state(cfg, 'conflict.txt')
     if r.returncode == 0:
         if marker.exists():
             marker.unlink()
         return t(cfg.lang, 'pulled')
-    git(cfg, 'rebase', '--abort'); git(cfg, 'stash', 'pop')
-    raw = (r.stderr or r.stdout).strip().splitlines()
+    out = (r.stderr or r.stdout).strip()
+    if any(k in out for k in NET_ERRORS):
+        # fetch never reached the remote: nothing was merged or stashed, so this is not a conflict
+        return t(cfg.lang, 'offline')
+    git(cfg, 'rebase', '--abort')
+    if stashes() > before:                                       # only pop an autostash git left behind, never an older stash
+        git(cfg, 'stash', 'pop')
+    raw = out.splitlines()
     gist = [l for l in raw if 'CONFLICT' in l or 'could not apply' in l or l.startswith('error:')][:3] or raw[:2]
     msg = t(cfg.lang, 'conflict') + '\n   ' + '\n   '.join(l[:160] for l in gist)
     marker.write_text(f'{dt.datetime.now():%Y-%m-%d %H:%M}\n{msg}\n', encoding='utf-8')
