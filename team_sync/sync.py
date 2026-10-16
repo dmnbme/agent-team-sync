@@ -231,6 +231,13 @@ def _start_body(cfg, pull_ok=True):
     if (cfg.data.get('drive') or {}).get('root_name'):
         d = cfg.drive()
         lines.append(t(cfg.lang, 'drive', path=d) if d else t(cfg.lang, 'drive_missing', key=cfg.key('DRIVE_ROOT')))
+        if d:
+            try:                                                # top-level folders, so the agent knows what lives on the drive
+                tops = sorted(p.name for p in d.iterdir() if p.is_dir() and not p.name.startswith('.'))
+                if tops:
+                    lines.append(t(cfg.lang, 'drive_folders', list=' · '.join(tops[:30]) + (' …' if len(tops) > 30 else '')))
+            except OSError:
+                pass
     lines.append(t(cfg.lang, 'rules', rules=cfg.data['rules_file']))
     stamp.write_text(dt.datetime.now().isoformat(timespec='seconds'), encoding='utf-8')
     print('\n'.join(lines))
