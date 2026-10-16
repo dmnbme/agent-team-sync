@@ -4,6 +4,7 @@
   team-sync stop    commit local changes (secret gate runs in pre-commit), pull --rebase, push; auto journal line
   team-sync note "what / where / next"
   team-sync hook antigravity pre_invocation|stop     stdin JSON → stdout JSON (Antigravity hook protocol)
+  team-sync hook codex session_start|stop            stdin JSON → stdout JSON (Codex hook protocol)
 
 All git operations on one machine (hooks, background autosync, manual) are serialised with a file lock.
 A pull conflict is never left half-merged: rebase is aborted, local work stays, a marker is written and shown next start.
@@ -218,7 +219,7 @@ def stop(cfg):
 def _stop_body(cfg):
     ensure_hook(cfg)
     git(cfg, 'add', '-A')
-    staged = [l for l in git(cfg, 'diff', '--cached', '--name-only').stdout.splitlines() if l.strip()]
+    staged = [l for l in git(cfg, '-c', 'core.quotePath=false', 'diff', '--cached', '--name-only').stdout.splitlines() if l.strip()]
     if staged:
         preview = ', '.join(staged[:6]) + (f' … ({len(staged)})' if len(staged) > 6 else '')
         note(cfg, t(cfg.lang, 'auto_changed', n=len(staged), files=preview), auto=True)
@@ -262,7 +263,7 @@ def _capture(fn):
 
 
 def hook(cfg, kind, event):
-    """Antigravity: stdin JSON in, stdout JSON out. Never raise, never print anything but JSON."""
+    """Agent hook adapters (Antigravity, Codex): stdin JSON in, stdout JSON out. Never raise, never print anything but JSON."""
     try:
         raw = sys.stdin.read() if not sys.stdin.isatty() else ''
         data = json.loads(raw) if raw.strip() else {}
@@ -290,6 +291,15 @@ def hook(cfg, kind, event):
         elif kind == 'antigravity' and event == 'stop':
             if data.get('fullyIdle', True):
                 _capture(lambda: stop(cfg))
+        elif kind == 'codex' and event == 'session_start':
+            # SessionStart: hookSpecificOutput.additionalContext becomes developer context for the thread
+            text = _capture(lambda: start(cfg))
+            if text:
+                out = {'hookSpecificOutput': {'hookEventName': 'SessionStart', 'additionalContext': t(cfg.lang, 'hook_inject_prefix') + text}}
+        elif kind == 'codex' and event == 'stop':
+            # Stop fires when a turn ends; the hook file runs it with async: true, so the push never holds up the user.
+            # (SessionEnd is capped at 3 s by Codex, too short for pull + push; the background autosync covers the rest.)
+            _capture(lambda: stop(cfg))
     except Exception:
         out = {}
     sys.stdout.write(json.dumps(out, ensure_ascii=False))

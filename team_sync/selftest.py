@@ -1,4 +1,4 @@
-"""Two-clone simulation in a temp dir: proves sync, conflict handling, leases (if configured) and the Antigravity hook.
+"""Two-clone simulation in a temp dir: proves sync, conflict handling, leases (if configured) and the Antigravity and Codex hooks.
 Never touches the real origin. `team-sync selftest [--keep]`"""
 import json
 import pathlib
@@ -82,6 +82,18 @@ def run(cfg, keep=False):
     except Exception as e:  # noqa: BLE001
         check('valid JSON with injected summary', False, str(e)[:80])
     check('no duplicate injection in the same conversation', ts(B, 'hook', 'antigravity', 'pre_invocation', stdin='{"conversationId":"selftest","invocationNum":0}').strip() == '{}')
+
+    print('6 Codex hook')
+    out = ts(B, 'hook', 'codex', 'session_start', stdin='{"hook_event_name":"SessionStart","source":"startup"}')
+    try:
+        hso = json.loads(out)['hookSpecificOutput']
+        check('SessionStart returns additionalContext', hso.get('hookEventName') == 'SessionStart' and len(hso.get('additionalContext', '')) > 100)
+    except Exception as e:  # noqa: BLE001
+        check('SessionStart returns additionalContext', False, str(e)[:80])
+    (A / jdir / 'selftest_codex.md').write_text('from a codex turn\n', encoding='utf-8')   # alice: bob still has the step-3 conflict
+    out = ts(A, 'hook', 'codex', 'stop', stdin='{"hook_event_name":"Stop"}')
+    check('Stop prints only JSON', out.strip() == '{}', out[:80])
+    check('Stop commits + pushes the turn', 'selftest_codex.md' in sh(tmp, 'git', '--git-dir', 'origin.git', 'log', '-1', '--name-only', '--format='))
 
     if keep:
         print(f'\nkept: {tmp}')

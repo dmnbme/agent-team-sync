@@ -14,7 +14,7 @@ def main(argv=None):
     sub.add_parser('stop', help='commit + pull --rebase + push (session end hook / autosync)')
     sub.add_parser('status', help='git status and last commits')
     n = sub.add_parser('note', help='append a line to the team journal'); n.add_argument('text', nargs='+')
-    h = sub.add_parser('hook', help='agent hook adapters (stdin JSON → stdout JSON)'); h.add_argument('kind', choices=['antigravity']); h.add_argument('event')
+    h = sub.add_parser('hook', help='agent hook adapters (stdin JSON → stdout JSON)'); h.add_argument('kind', choices=['antigravity', 'codex']); h.add_argument('event')
     sub.add_parser('gate', help='secret gate (used by the pre-commit hook)')
     l = sub.add_parser('lease', help='leases'); ls = l.add_subparsers(dest='op', required=True)
     for op in ('acquire', 'renew', 'release'):

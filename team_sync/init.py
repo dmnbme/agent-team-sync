@@ -29,6 +29,7 @@ def run(cfg, ns):
     _write(cfg.repo / '.claude' / 'settings.json', (RES / 'hooks' / 'claude.settings.json').read_text(encoding='utf-8'), created)
     _write(cfg.repo / '.agents' / 'hooks.json', (RES / 'hooks' / 'antigravity.hooks.json').read_text(encoding='utf-8'), created)
     _write(cfg.repo / '.codebuddy' / 'settings.json', (RES / 'hooks' / 'codebuddy.settings.json').read_text(encoding='utf-8'), created)
+    _write(cfg.repo / '.codex' / 'hooks.json', (RES / 'hooks' / 'codex.hooks.json').read_text(encoding='utf-8'), created)
     _write(cfg.repo / 'AGENTS.md', (RES / 'AGENTS.template.md').read_text(encoding='utf-8'), created)
     for pointer in ('CLAUDE.md', 'CODEBUDDY.md'):
         _write(cfg.repo / pointer, '@AGENTS.md\n', created)

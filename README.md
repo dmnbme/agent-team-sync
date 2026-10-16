@@ -2,7 +2,7 @@
 
 Keep a small team and their AI coding agents in sync.
 
-Three people, three different agents (Claude Code, Antigravity, WorkBuddy), one repository. Two of them do not know git.
+Three people, four different agents (Claude Code, Codex, Antigravity, WorkBuddy), one repository. Two of them do not know git.
 Files live on a shared drive, code lives in git, and nobody knows what the others changed until something collides.
 `team-sync` fixes that with three layers, each doing one job:
 
@@ -39,8 +39,8 @@ the rebase is aborted, local work stays, a marker is written, a desktop notifica
 Two ways. The checkout needs git only and works with whatever `python3` a hook happens to get:
 
 ```bash
-git clone --branch v0.1.5 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # members
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.5"  # or: maintainers, gives the team-sync command
+git clone --branch v0.1.7 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # members
+pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.7"  # or: maintainers, gives the team-sync command
 ```
 
 Inside a repo set up with `init`, everything runs through the committed launcher `bin/team_sync.py`, which finds the package either way.
@@ -84,7 +84,7 @@ git add -A && git commit -m "team-sync" && git push
 ## Set up a machine (each member, once)
 
 ```bash
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.5"
+pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.7"
 git clone <team repo> ~/team && cd ~/team
 cp ~/Downloads/env.team.txt .env.team        # the file the maintainer sent
 team-sync start                              # installs the pre-commit gate, prints the summary
@@ -101,6 +101,7 @@ Then open the folder in the agent. The hook files committed by `init` make every
 | Claude Code | `.claude/settings.json` | SessionStart → `start`, SessionEnd → `stop` |
 | Antigravity | `.agents/hooks.json` | PreInvocation → summary injected once per conversation via `injectSteps`; Stop → `stop` when idle |
 | CodeBuddy / WorkBuddy | `.codebuddy/settings.json` | SessionStart → `start`, SessionEnd → `stop` |
+| Codex | `.codex/hooks.json` | SessionStart → summary returned as `additionalContext`; Stop (async) → `stop` after each turn. Codex asks once to trust the project and once to trust each hook (`/hooks`); SessionEnd is not used because Codex caps it at 3 s, too short for pull + push |
 | anything else | none needed | the background autosync still runs; the rules file says to run `team-sync start` |
 
 Instruction files: `AGENTS.md` is the single source; `CLAUDE.md` and `CODEBUDDY.md` contain one line, `@AGENTS.md`.

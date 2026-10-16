@@ -2,7 +2,7 @@
 
 让一个小团队和他们各自的 AI 编程 agent 保持同步。
 
-三个人、三种 agent(Claude Code、Antigravity、WorkBuddy)、一个仓库,其中两个人不会 git。文件在网盘、代码在 git,谁改了什么没人知道,重活并发会撞车。`team-sync` 把事情分成三层,各管一件事:
+三个人、四种 agent(Claude Code、Codex、Antigravity、WorkBuddy)、一个仓库,其中两个人不会 git。文件在网盘、代码在 git,谁改了什么没人知道,重活并发会撞车。`team-sync` 把事情分成三层,各管一件事:
 
 | 层 | 放什么 | 机制 |
 |---|---|---|
@@ -17,8 +17,8 @@
 两种方式。checkout 只需要 git,而且不挑 hook 拿到的是哪个 `python3`:
 
 ```bash
-git clone --branch v0.1.5 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # 成员
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.5"  # 或:维护者,得到 team-sync 命令
+git clone --branch v0.1.7 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # 成员
+pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.7"  # 或:维护者,得到 team-sync 命令
 ```
 
 用 `init` 配置过的仓库里,所有东西都走提交在仓库里的引导脚本 `bin/team_sync.py`,两种装法它都能找到包。
@@ -42,7 +42,7 @@ team-sync autosync on
 ## 成员配置机器(一次)
 
 ```bash
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.5"
+pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.7"
 git clone <团队仓库> ~/team && cd ~/team
 cp ~/Downloads/env.team.txt .env.team
 team-sync start && team-sync autosync on && team-sync paths
@@ -57,6 +57,7 @@ team-sync start && team-sync autosync on && team-sync paths
 | Claude Code | `.claude/settings.json` | SessionStart → `start`,SessionEnd → `stop` |
 | Antigravity | `.agents/hooks.json` | PreInvocation → 每个对话注入一次摘要(`injectSteps`);Stop → 空闲时 `stop` |
 | CodeBuddy / WorkBuddy | `.codebuddy/settings.json` | SessionStart → `start`,SessionEnd → `stop` |
+| Codex | `.codex/hooks.json` | SessionStart → 摘要作为 `additionalContext` 注入;Stop(后台运行)→ 每轮结束后 `stop`。Codex 会先让你信任这个项目,再在 `/hooks` 里逐个信任钩子(各一次);不用 SessionEnd,Codex 只给它 3 秒,不够拉取加推送 |
 | 其它 | 不需要 | 后台 autosync 照常跑;规则文件里写着「先跑 team-sync start」 |
 
 指令文件只有一份正本 `AGENTS.md`,`CLAUDE.md` 和 `CODEBUDDY.md` 各一行 `@AGENTS.md`。

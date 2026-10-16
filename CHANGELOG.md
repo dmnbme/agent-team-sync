@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.7 (2026-10-17)
+
+- Codex support. `team-sync init` now writes `.codex/hooks.json`: SessionStart returns the team summary as `additionalContext`, and Stop runs `stop` in the background after each turn (`async: true`). New adapter `team-sync hook codex session_start|stop`. SessionEnd is not used because Codex caps it at 3 s, too short for pull + push; the background autosync covers edits made after the last turn. Codex asks once to trust the project and once per hook (`/hooks`), and again whenever the hook file changes.
+- The automatic journal line lists non-ASCII paths as they are (`题库/pipeline/x.py`), not as git's octal escapes.
+- selftest covers the Codex hook (summary JSON, commit + push from Stop).
+
 ## 0.1.6 (2026-09-28)
 
 - Fix: a pull that failed because the remote was unreachable (no network, DNS, timeout) was reported as a merge conflict, with a desktop notification on every autosync run and a conflict marker shown at the next start. It is now reported as "sync skipped", with no marker and no notification.
