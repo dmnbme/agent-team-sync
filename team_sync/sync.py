@@ -373,6 +373,10 @@ def hook(cfg, kind, event):
         data = {}
     out = {}
     try:
+        if kind == 'codex':
+            from .convo import codex_is_exec
+            if codex_is_exec(data):                              # a script calling `codex exec`: no sync, no record
+                sys.stdout.write('{}'); return
         if kind == 'antigravity' and event == 'pre_invocation':
             conv = str(data.get('conversationId') or 'na')
             seen_f = state(cfg, 'hook_seen.json')

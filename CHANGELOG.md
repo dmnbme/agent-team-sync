@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.13 (2026-10-17)
+
+- Codex hooks ignore scripted `codex exec` runs (rollout `session_meta.source == "exec"`): no summary, no conversation record, no sync. Batch jobs that call Codex inside the repo used to pull and push on every call and leave one record each.
+
 ## 0.1.12 (2026-10-17)
 
 - The session-start summary lists the shared drive's top-level folders under the Drive line, so the agent knows what lives there without browsing first.

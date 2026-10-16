@@ -140,6 +140,24 @@ def _codex_rollout(sid):
     return max(hits, key=os.path.getmtime) if hits else None
 
 
+def codex_is_exec(data):
+    """True for a scripted `codex exec` run (session_meta source=exec): batch jobs, not conversations."""
+    sid = re.sub(r'[^A-Za-z0-9_-]', '', str(data.get('session_id') or ''))
+    tpath = data.get('transcript_path') or (_codex_rollout(sid) if sid else None)
+    if not tpath or not os.path.isfile(tpath):
+        return False
+    try:
+        with open(tpath, encoding='utf-8') as f:
+            for _, line in zip(range(20), f):
+                d = json.loads(line)
+                if d.get('type') == 'session_meta':
+                    p = d.get('payload') or {}
+                    return p.get('source') == 'exec' or p.get('originator') == 'codex_exec'
+    except (OSError, ValueError):
+        pass
+    return False
+
+
 def _read(path, offset, parse):
     """Complete lines from byte `offset`; a half-written last line waits for the next call."""
     with open(path, 'rb') as f:

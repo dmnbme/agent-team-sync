@@ -123,6 +123,13 @@ def run(cfg, keep=False):
     check('Codex record: user + agent text only', '帮我把招生情报整理成表格' in body and '表格已经放好了' in body
           and not any(x in body for x in ('INJECTED-SHOULD', 'ENV-SHOULD', 'TOOL-SHOULD')))
     check('journal auto line leaves records out', cdir not in (A / cfg.data['journal']).read_text(encoding='utf-8'))
+    ex = tmp / 'rollout-2026-01-02T01-00-00-selftestexec1.jsonl'
+    jsonl(ex, [{'timestamp': '2026-01-02T01:00:00.000Z', 'type': 'session_meta', 'payload': {'id': 'selftestexec1', 'source': 'exec', 'originator': 'codex_exec'}},
+               um('2026-01-02T01:00:01.000Z', 'SCRIPTED-EXEC-SHOULD-NOT-BE-RECORDED')])
+    (A / jdir / 'selftest_exec.md').write_text('changed during a scripted run\n', encoding='utf-8')
+    out = ts(A, 'hook', 'codex', 'stop', stdin=json.dumps({'session_id': 'selftestexec1', 'transcript_path': str(ex)}), env={'TEAM_SYNC_FOREGROUND': '1'})
+    check('scripted `codex exec` run: no record, no sync', out.strip() == '{}' and not list((A / cdir).glob('*/*_codex_selftes*xec*.md'))
+          and 'selftest_exec.md' not in sh(tmp, 'git', '--git-dir', 'origin.git', 'log', '-1', '--name-only', '--format='))
 
     print('7 Claude Code conversation record')
     tr = tmp / 'claude-selftest.jsonl'
