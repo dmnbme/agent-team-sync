@@ -1,139 +1,145 @@
-# agent-team-sync
+# Agent Team Sync
 
-Keep a small team and their AI coding agents in sync.
+[English](README.en.md)
 
-Three people, four different agents (Claude Code, Codex, Antigravity, WorkBuddy), one repository. Two of them do not know git.
-Files live on a shared drive, code lives in git, and nobody knows what the others changed until something collides.
-`team-sync` fixes that with three layers, each doing one job:
+让一个小团队里每个人各自用的 AI 编程 agent,共用同一个仓库、同一份团队上下文。
 
-| layer | holds | mechanism |
+适用的情况:几个人合作一个项目,每人用自己习惯的 agent(Claude Code、Codex、Antigravity、WorkBuddy),其中有人不会用 git。没有这个工具时,每个 agent 只知道自己这台电脑上的情况:不知道别人刚改了什么、为什么改,两个人同时跑同一个脚本会互相覆盖,密钥也可能被提交进仓库。
+
+## 它做什么
+
+装好以后,成员照常打开自己的 agent 干活,下面这些由 hook、git 和系统定时任务自动完成:
+
+- **开会话时给 agent 一份团队摘要**:先拉取最新内容,再把最近的提交、团队日志的最后几条、谁正在跑哪个共享任务、共享盘的位置和一级文件夹、最近的对话记录注入 agent 的上下文。
+- **自动提交和推送**:会话结束时提交本地改动、变基到远端、推送。另有每 5 分钟一次的后台同步,不依赖任何 agent。
+- **记录对话**:每轮结束后,把用户和 agent 说的话写进仓库,一个会话一个文件;不记工具调用和工具输出。原文超过 3 万字时,由正在运行的 agent 把较早的部分写成摘要,不需要 API key,也不额外调用模型。
+- **租约**:采集、上线这类会动共享资源的脚本,开始前先在数据库里占用对应资源;别人正在跑时直接拒绝,并显示是谁在占用。租约会过期,某个 agent 中途崩溃也不会让全队卡住。
+- **密钥门禁**:git 提交前检查新增内容,发现密钥形状的字符串或 `.env` 这类文件就拒绝提交;对话记录里的密钥和邮箱地址也会被替换掉。
+- **冲突处理**:拉取冲突时放弃这次合并、保留本地改动,弹出桌面通知,下次开会话时再提示,不会留下改了一半的文件。多人同时往团队日志末尾追加内容,会自动合并。
+- **给不懂技术的成员装机**:安装脚本可以交给成员自己的 agent 来跑,遇到需要本人操作的步骤(登录 GitHub、安装 Google Drive)会停下来,告诉 agent 该让用户点哪里。
+
+## 分三层存放
+
+| 层 | 放什么 | 怎么同步 |
 |---|---|---|
-| **git** | code, docs, skills, specs, data fingerprints | hooks pull at session start and commit + push at session end; a background timer does the same every 5 minutes |
-| **shared drive** | large files (Google Drive, OneDrive, Dropbox) | path resolution only; the drive client does the syncing |
-| **Postgres** (Supabase or any) | leases for mutual exclusion, shared cursors, the team passphrase | RLS-closed tables behind security-definer functions |
+| **git 仓库** | 代码、文档、skill、规格、团队日志、对话记录 | hook 和后台同步自动拉取、提交、推送 |
+| **共享盘**(Google Drive、OneDrive、Dropbox) | 大文件、给人看的文档 | 由共享盘客户端同步;本工具只负责在每台电脑上找到它的路径 |
+| **数据库**(Supabase;可选) | 租约、共享进度、团队口令 | 通过 HTTP 调用数据库里的 6 个函数,每个函数先校验口令;表启用了行级安全。不配数据库时,其他功能照常工作,只是没有租约 |
 
-Enforcement never relies on the model remembering a rule: leases are taken inside scripts, the secret gate runs inside git, and
-the background sync runs inside the OS scheduler. Hooks only add convenience: the session-start summary and the end-of-session push.
+这样分的原因:三类内容的大小差四个数量级(文件以 GB 计、代码以 MB 计、状态以字节计),对一致性的要求也不同。共享盘没有锁,遇到冲突只会复制出副本;git 只能在改完以后才发现冲突;只有数据库能在一个耗时的任务开始之前就拒绝它。
 
-## What a session looks like
+规则的执行不依赖模型记住规则:租约在脚本里拿,密钥门禁在 git 里跑,后台同步由操作系统的定时任务运行。hook 只负责开头的摘要和结束时的推送。
+
+## 开会话时 agent 看到的内容
 
 ```
-## Team sync · alice@laptop:4242 · 2026-09-09 10:02
-Pulled latest
-Recent commits (since 2026-09-08):
+## 团队同步 · alice@laptop:4242 · 2026-09-09 10:02
+已拉取最新
+最近提交(2026-09-08 起):
    3f1c2a9 2026-09-09 bob: sync(bob): 2026-09-09 09:40 · 2 files
-Latest journal entries:
-   - 2026-09-09 09:40 · bob · rewrote the pricing page copy / docs/pricing.md / needs review
-Active leases: collect:telegram:main←bob@desk:9911
-data/: matches manifest (3221 files, by alice on 2026-09-07)
+团队日志最近几条:
+   - 2026-09-09 09:40 · bob · 改写了价格页文案 / docs/pricing.md / 待审
+活跃租约: collect:telegram:main←bob@desk:9911
+data/: 与清单一致(3221 文件,清单由 alice 于 2026-09-07 生成)
+最近的对话记录(想知道之前聊过什么,打开对应文件):
+   09-09 09:38 · bob · Codex · 价格页改成按地区显示币种 → docs/对话记录/2026-09/2026-09-09_bob_codex_01a0f3c2.md
 Drive: /Users/alice/Library/CloudStorage/GoogleDrive-…/Shared drives/Team
-Rules: see AGENTS.md. Take a lease through the scripts before touching shared resources.
+   一级文件夹: 合同 · 素材 · 报告
+规则见 AGENTS.md;要占用共享资源时通过脚本自动拿租约,不要手动绕过。
 ```
 
-That block is injected into the agent's context by a hook. When the session ends, local changes are committed with one
-automatic journal line listing the files changed during the session ("changed 3 files: …"), rebased on the remote and
-pushed; autosync and turn-end pushes commit without journal lines. The journal is marked `merge=union` in
-`.gitattributes` (added automatically), so two people's new lines merge instead of conflicting. A conflict is never left half-merged:
-the rebase is aborted, local work stays, a marker is written, a desktop notification fires, and the next session start prints it.
+## 支持的 agent
 
-## Install
+| agent | hook 文件 | 做的事 |
+|---|---|---|
+| Claude Code | `.claude/settings.json` | 会话开始:摘要;每轮结束:对话记录;会话结束:提交推送并记一行日志 |
+| Codex | `.codex/hooks.json` | 会话开始:摘要;每轮结束:对话记录,再在后台提交推送。脚本调用的 `codex exec` 自动跳过 |
+| Antigravity | `.agents/hooks.json` | 每个对话注入一次摘要;空闲时提交推送 |
+| WorkBuddy / CodeBuddy | `.codebuddy/settings.json` | 会话开始:摘要;会话结束:提交推送 |
+| 其他 agent | 不需要 | 后台同步照常运行;守则里写明开工前先运行 `start` |
 
-Two ways. The checkout needs git only and works with whatever `python3` a hook happens to get:
+团队守则只有一份正本 `AGENTS.md`;`CLAUDE.md` 和 `CODEBUDDY.md` 各只有一行 `@AGENTS.md`。
+
+Codex 第一次打开项目时,要信任这个文件夹,再在「设置 → Hooks」里给每个 hook 点一次 Trust;hook 文件改动后要重新点。对话记录目前支持 Claude Code 和 Codex,Antigravity 和 WorkBuddy 还不支持。
+
+## 和托管的协作平台相比
+
+市面上也有让多人和多个 agent 协作的托管平台,它们提供自己的客户端、项目和任务看板。两类工具的差别:
+
+| | agent-team-sync | 托管的协作平台 |
+|---|---|---|
+| 使用的 agent | 成员已经在用的 Claude Code、Codex、Antigravity、WorkBuddy,可以混用 | 平台自己的 agent |
+| 数据存放 | 你自己的 git 仓库、共享盘和数据库 | 平台提供的共享存储 |
+| 新界面和新账号 | 没有,成员照常打开自己的 agent | 安装平台客户端或用网页版,再邀请成员加入 |
+| 防止重复跑同一个任务 | 数据库租约,脚本开始前检查 | 未见公开说明 |
+| 密钥防护 | 提交前门禁,对话记录自动脱敏 | 未见公开说明 |
+| 任务看板、上下游交接、手机端 | 没有 | 有 |
+| 费用 | 开源(MIT),数据库可用 Supabase 免费档 | 未见公开价格 |
+
+适合:3 到 10 人、已经各自在用编程 agent、希望数据留在自己手里的团队。需要任务看板或跨部门流程审批时,托管平台更合适。
+
+## 安装
+
+依赖只有 git 和 Python 3.9 以上(macOS 自带的就够),不用安装任何第三方库。共享盘可以是任何会同步成本地文件夹的服务:Google Drive、OneDrive、Dropbox 能自动找到,其他的(坚果云、iCloud、NAS 等)在 `team-sync.json` 的 `drive.patterns` 里加一条路径规则,或在每台电脑的 `.env.team` 里写 `<前缀>_DRIVE_ROOT=路径`。
 
 ```bash
-git clone --branch v0.1.13 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # members
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.13"  # or: maintainers, gives the team-sync command
+git clone --branch v0.1.13 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # 成员:只需要 git
+pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.13"  # 维护者:得到 team-sync 命令
 ```
 
-Inside a repo set up with `init`, everything runs through the committed launcher `bin/team_sync.py`, which finds the package either way.
+用 `init` 配置过的仓库里,一切都通过提交进仓库的启动器 `bin/team_sync.py` 运行,两种安装方式它都能找到。Windows 需要先装 Python,并确保有 `python3` 命令。
 
-No dependencies beyond the standard library. Python 3.9+ (the one that ships with macOS is enough). Windows: install
-Python, and make sure a `python3` command exists (a copy of `python.exe` named `python3.exe` next to it works).
-
-## Set up a repo (maintainer, once)
+## 维护者:配置仓库(一次)
 
 ```bash
 cd your-team-repo
-team-sync init --team "Acme" --prefix ACME --lang en   # writes team-sync.json, hook files, .env.team.example, AGENTS.md
-team-sync db install --project-ref <supabase-ref>      # SUPABASE_ACCESS_TOKEN in env, or --dsn postgres://…
+team-sync init --team "Acme" --prefix ACME --lang zh   # 写入 team-sync.json、四家 hook 文件、.env.team.example、AGENTS.md
+team-sync db install --project-ref <supabase-ref>      # 环境变量里放 SUPABASE_ACCESS_TOKEN,或用 --dsn postgres://…
 echo "ACME_TEAM_KEY=$(openssl rand -hex 24)" >> .env.team
 team-sync db register-key --project-ref <supabase-ref>
-team-sync db env-for bob                                # writes ~/Desktop/env.team.txt to send to Bob
+team-sync db env-for bob                                # 在桌面生成 env.team.txt,发给 Bob
 team-sync autosync on
 git add -A && git commit -m "team-sync" && git push
 ```
 
-`team-sync.json`:
+`team-sync.json` 的主要字段:
 
 ```json
 {
   "team": "Acme",
-  "lang": "en",
+  "lang": "zh",
   "env_prefix": "ACME",
-  "env_file": ".env.team",
-  "rules_file": "AGENTS.md",
   "journal": "docs/journal.md",
   "fingerprint": { "root": "data", "manifest": "data_manifest.json" },
   "drive": { "root_name": "Team", "marker": "Papers" },
-  "sync": { "autosync_interval_sec": 300, "log_commits": 12, "journal_tail": 8 },
-  "source": "git+https://github.com/dmnbme/agent-team-sync",
-  "version": "0.1.0"
+  "convo": { "dir": "docs/对话记录", "compact_chars": 30000, "keep_recent_chars": 8000, "keep_email_domains": ["acme.com"] },
+  "version": "0.1.13"
 }
 ```
 
-`version` is the pin: `start` warns when the installed version differs, `team-sync upgrade` installs the pinned one.
+`version` 锁定团队使用的版本:成员电脑上的版本不一致时,开头摘要会提示,守则让 agent 直接运行 `team-sync upgrade`。`convo` 不写就不记录对话。
 
-## Set up a machine (each member, once)
+## 成员:配置电脑(一次)
+
+把 `tools/SETUP_RUNBOOK.md` 一类的安装手册、安装脚本和 `env.team.txt` 发给成员,让成员对自己的 agent 说「按照这份手册帮我完成配置」。手动配置的步骤:
 
 ```bash
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.13"
-git clone <team repo> ~/team && cd ~/team
-cp ~/Downloads/env.team.txt .env.team        # the file the maintainer sent
-team-sync start                              # installs the pre-commit gate, prints the summary
-team-sync autosync on
-team-sync paths                              # four lines: repo, drive, identity, database
+git clone <团队仓库> ~/team && cd ~/team
+cp ~/Downloads/env.team.txt .env.team        # 维护者发来的文件
+python3 bin/team_sync.py start               # 安装提交前门禁,打印摘要
+python3 bin/team_sync.py autosync on
+python3 bin/team_sync.py paths               # 四行:仓库、共享盘、身份、数据库
 ```
 
-Then open the folder in the agent. The hook files committed by `init` make every supported agent run `team-sync` automatically.
+之后用 agent 打开这个文件夹即可。
 
-## Agents
-
-| agent | file | events |
-|---|---|---|
-| Claude Code | `.claude/settings.json` | SessionStart → `start`; Stop → conversation record (see below); SessionEnd → `stop` |
-| Antigravity | `.agents/hooks.json` | PreInvocation → summary injected once per conversation via `injectSteps`; Stop → `stop` when idle |
-| CodeBuddy / WorkBuddy | `.codebuddy/settings.json` | SessionStart → `start`, SessionEnd → `stop` |
-| Codex | `.codex/hooks.json` | SessionStart → summary returned as `additionalContext`; Stop → conversation record, then `stop` in a detached process after each turn. Codex asks once to trust the project and once to trust each hook (`/hooks`), again whenever the hook file changes; SessionEnd is not used because Codex caps it at 3 s, too short for pull + push |
-| anything else | none needed | the background autosync still runs; the rules file says to run `team-sync start` |
-
-Instruction files: `AGENTS.md` is the single source; `CLAUDE.md` and `CODEBUDDY.md` contain one line, `@AGENTS.md`.
-
-## Conversation records
-
-Optional. With `"convo": {"dir": "docs/conversations"}` in `team-sync.json`, the turn-end hook of Claude Code and Codex
-writes what the user and the agent said to `<dir>/YYYY-MM/<date>_<who>_<agent>_<session>.md`, one file per session,
-committed with everything else. Tool calls, tool output, thinking and injected context are left out; credential-shaped
-strings are redacted with the gate's patterns, and e-mail addresses become `[email]` unless their domain is listed in
-`convo.keep_email_domains`. The session-start summary lists the five most recent records, so an agent
-can open the one it needs.
-
-When the verbatim part passes `compact_chars` (default 30000), the hook answers the turn end with a request: the running
-agent summarises the older part and runs `team-sync convo compact --file F --through T` with the summary on stdin. The
-newest `keep_recent_chars` (default 8000) stay verbatim. No API key and no extra model call: the agent that is already
-running writes the summary.
-
-Opting out: a user message containing `[no-record]` (or `不记录这段对话`) removes that session's record; whatever was
-already pushed stays in git history. `TEAM_SYNC_NO_CONVO=1`, or `<PREFIX>_CONVO=off` in the env file, turns recording off on
-one machine. Antigravity and CodeBuddy are not covered yet. Everyone with access to the repo can read the records, so tell
-the people whose conversations are recorded.
-
-## Leases
+## 租约
 
 ```python
 from team_sync.leases import lease
 
 with lease('collect:telegram:main', ttl=1800, note='fetch'):
-    ...   # SystemExit with who-holds-it if unavailable; renewed every ttl/3 s in the background
+    ...   # 被占用时直接退出并说明谁在占用;后台每 ttl/3 秒续租
 ```
 
 ```
@@ -142,31 +148,41 @@ team-sync lease list
 team-sync lease release collect:telegram:main [--force]
 ```
 
-A lease, not a lock: it expires, so a crashed agent cannot deadlock the team. Per resource, not per person.
-The holder id is `person@machine:pid`, so two agents on one laptop are two holders.
+租约按资源计,不按人计。持有者标识是 `人@电脑:进程`,同一台电脑上的两个 agent 算两个持有者。
 
-## Other commands
+## 对话记录
+
+在 `team-sync.json` 里写上 `"convo": {"dir": "docs/对话记录"}` 即开启。每个会话一个文件:`<dir>/年-月/<日期>_<谁>_<agent>_<会话号>.md`。
+
+- 不记:工具调用、工具输出、思考过程、注入的上下文。记:双方说的话,以及用户在选择题里点的答案。
+- 脱敏:密钥形状的字符串换成 `[redacted]`;邮箱地址换成 `[email]`,`keep_email_domains` 里列出的域名除外。
+- 压缩:原文超过 `compact_chars` 时,hook 在这一轮结束时请正在运行的 agent 写摘要,再运行 `team-sync convo compact`;最新的 `keep_recent_chars` 保持原文。
+- 不记录:用户消息里出现 `[no-record]` 或「不记录这段对话」,这个会话的记录会被删掉(已经推送的部分仍在 git 历史里);环境变量 `TEAM_SYNC_NO_CONVO=1` 或 env 文件里的 `<前缀>_CONVO=off` 关闭整台电脑的记录。
+- 仓库里的人都能看到这些记录,开启前要告诉被记录的人。
+
+## 其他命令
 
 ```
-team-sync note "what / where / next"      append to the team journal
-team-sync convo list | compact            conversation records
-team-sync cursor show|pull|push           shared "how far did we get" counters
-team-sync fingerprint [--check|--quick]   manifest for the data directory kept out of git
-team-sync gate                            secret gate (installed as pre-commit automatically)
-team-sync selftest                        two-clone simulation in a temp dir, ~20 s
+team-sync note "做了什么 / 改了哪 / 下一步"   往团队日志追加一行
+team-sync convo list | compact             对话记录
+team-sync cursor show|pull|push            共享进度(例如采集抓到了第几条)
+team-sync fingerprint [--check|--quick]    不进 git 的数据目录的指纹清单
+team-sync gate                             密钥门禁(会自动装成 pre-commit)
+team-sync selftest                         在临时目录里用三个克隆模拟整套流程,约 30 秒
 team-sync paths | status | version
 ```
 
-## Design notes
+## 设计说明
 
-- **Why three layers.** Sizes differ by four orders of magnitude (GBs of files, MBs of code, bytes of state) and so do the
-  consistency needs. A drive has no locks and resolves conflicts by making copies; git detects conflicts only after the work
-  is done; a database is the only place that can refuse *before* an expensive job starts.
-- **Why leases live in scripts, not hooks.** Hooks differ per agent, need a trust prompt, and can be bypassed by an agent that
-  writes its own command. A script that is the only path to the resource cannot be forgotten.
-- **Why the passphrase.** Members never receive a service key. The anon key is public anyway; the passphrase is checked by
-  every function and the tables are RLS-closed, so the anon key alone reads nothing.
+- **租约放在脚本里,不放在 hook 里。** 各家 agent 的 hook 不一样,需要用户信任,而且 agent 自己写的命令可以绕过 hook。脚本是使用这个资源的唯一入口,不会被忘掉。
+- **成员只拿团队口令。** 成员拿不到数据库的服务密钥;匿名 key 本来就是公开的,表启用了行级安全,只有校验过口令的函数能读写。
+- **开头摘要里的「谁做了什么」从 git 来。** 提交记录、团队日志、对话记录都在仓库里,换电脑、换 agent 都能读到,不依赖某一家 agent 的记忆功能。
+- **自测。** `team-sync selftest` 在临时目录里建一个本地远端和三个克隆,覆盖同步、冲突、租约、四家 agent 的 hook、对话记录(过滤、脱敏、压缩、不记录)和日志并发合并,不会碰真实的远端。
 
-## License
+## 背景
 
-MIT
+这个工具来自一个三人团队的日常使用:三个人分别在 Mac 和 Windows 上用 Claude Code、Codex 和 Antigravity,两个人不用 git,共同维护一个题库、一个网站和一个共享盘。
+
+## 许可
+
+MIT。先在一个测试仓库里运行 `team-sync init`,再运行 `team-sync selftest` 确认各项检查通过。
