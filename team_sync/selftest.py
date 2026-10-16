@@ -172,6 +172,26 @@ def run(cfg, keep=False):
     check('"不记录这段对话" leaves no record', not list((A / cdir).glob('*/*_norecord.md')))
     check('session start lists recent records', cdir + '/' in ts(A, 'start'))
 
+    print('8 journal: concurrent lines merge; auto line only at session end')
+    C = tmp / 'carol'
+    sh(tmp, 'git', 'clone', '-q', 'origin.git', 'carol')
+    sh(C, 'git', 'config', 'user.name', 'carol'); sh(C, 'git', 'config', 'user.email', 'carol@selftest.local')
+    (C / cfg.data['env_file']).write_text('\n'.join([f"{cfg.key('WHO')}=carol"] + env_lines) + '\n', encoding='utf-8')
+    ts(C, 'start')
+    ts(A, 'note', 'selftest: alice writes at the same time'); ts(A, 'stop')
+    ts(C, 'note', 'selftest: carol writes at the same time'); out = ts(C, 'stop')        # carol has not pulled alice's line
+    pushed = sh(tmp, 'git', '--git-dir', 'origin.git', 'show', 'HEAD:' + cfg.data['journal'])
+    check('two people appending to the journal: merged, no conflict', ('Pushed' in out or '已推送' in out)
+          and 'alice writes at the same time' in pushed and 'carol writes at the same time' in pushed, out.replace('\n', ' | ')[:100])
+    ts(A, 'start')
+    (A / jdir / 'selftest_s1.md').write_text('turn 1\n', encoding='utf-8'); ts(A, 'stop')          # like autosync / a turn end
+    check('plain stop (autosync, turn end) writes no auto line', 'selftest_s1.md' not in (A / cfg.data['journal']).read_text(encoding='utf-8'))
+    (A / jdir / 'selftest_s2.md').write_text('turn 2\n', encoding='utf-8'); ts(A, 'stop', '--session-end')
+    autos = [l for l in (A / cfg.data['journal']).read_text(encoding='utf-8').splitlines() if ' · auto · ' in l]
+    last = autos[-1] if autos else ''
+    check('session end: one line for the whole session, records left out', 'selftest_s1.md' in last and 'selftest_s2.md' in last
+          and cdir not in last, last[-90:])
+
     if keep:
         print(f'\nkept: {tmp}')
     else:

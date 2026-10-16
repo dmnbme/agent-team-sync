@@ -11,7 +11,8 @@ def main(argv=None):
     ap.add_argument('--repo', help='repo root (default: found from cwd / CLAUDE_PROJECT_DIR / CODEBUDDY_PROJECT_DIR)')
     sub = ap.add_subparsers(dest='cmd')
     sub.add_parser('start', help='pull + print the team summary (session start hook)')
-    sub.add_parser('stop', help='commit + pull --rebase + push (session end hook / autosync)')
+    so = sub.add_parser('stop', help='commit + pull --rebase + push (session end hook / autosync)')
+    so.add_argument('--session-end', action='store_true', help='also write one journal line listing the files changed this session')
     sub.add_parser('status', help='git status and last commits')
     n = sub.add_parser('note', help='append a line to the team journal'); n.add_argument('text', nargs='+')
     h = sub.add_parser('hook', help='agent hook adapters (stdin JSON → stdout JSON)'); h.add_argument('kind', choices=['antigravity', 'codex', 'claude']); h.add_argument('event')
@@ -59,7 +60,7 @@ def main(argv=None):
         if ns.cmd == 'start':
             from .sync import start; start(cfg); return 0
         if ns.cmd == 'stop':
-            from .sync import stop; stop(cfg); return 0
+            from .sync import stop; stop(cfg, session_end=ns.session_end); return 0
         if ns.cmd == 'status':
             from .sync import status; status(cfg); return 0
         if ns.cmd == 'note':

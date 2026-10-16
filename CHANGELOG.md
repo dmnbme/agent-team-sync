@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.10 (2026-10-17)
+
+- The journal is marked `merge=union` in `.gitattributes`, added automatically by `start` / `stop`. Two people appending to the journal at the same time used to conflict, which stopped autosync on one machine until someone resolved it by hand; their lines now merge.
+- The automatic journal line is written once, at session end: `team-sync stop --session-end`, used by the Claude Code and CodeBuddy SessionEnd hooks. It lists every file the person changed since the previous such line, including files that autosync or turn-end pushes committed in between. Autosync and turn-end pushes no longer write journal lines. Codex and Antigravity have no usable session-end event, so they write none; their work shows in the commit list, and Codex's in the conversation records.
+- selftest: concurrent journal appends from two clones; no auto line from a plain `stop`; one line at session end.
+
 ## 0.1.9 (2026-10-17)
 
 - Conversation records mask e-mail addresses as `[email]`, except for domains listed in `convo.keep_email_domains` (for example the team's own). Records quote what agents say about customers, and the repo is shared.

@@ -1,7 +1,8 @@
 """Session sync: the git layer, automated around agent sessions so nobody has to know git.
 
   team-sync start   pull; print recent commits, journal tail, active leases, fingerprint status, drive path
-  team-sync stop    commit local changes (secret gate runs in pre-commit), pull --rebase, push; auto journal line
+  team-sync stop    commit local changes (secret gate runs in pre-commit), pull --rebase, push
+  team-sync stop --session-end   same, plus one journal line listing the files this person changed since the last such line
   team-sync note "what / where / next"
   team-sync hook antigravity pre_invocation|stop     stdin JSON → stdout JSON (Antigravity hook protocol)
   team-sync hook codex session_start|stop            stdin JSON → stdout JSON (Codex hook protocol)
@@ -106,6 +107,16 @@ def ensure_hook(cfg):
             pass
 
 
+def ensure_attrs(cfg):
+    """Everyone appends to the journal; with merge=union two people's new lines merge instead of conflicting."""
+    line = f"{cfg.data['journal']} merge=union"
+    ga = cfg.repo / '.gitattributes'
+    have = ga.read_text(encoding='utf-8') if ga.exists() else ''
+    if line not in [l.strip() for l in have.splitlines()]:
+        ga.write_text(have.rstrip('\n') + ('\n' if have.strip() else '') + '# team-sync: concurrent journal appends keep both sides\n' + line + '\n',
+                      encoding='utf-8')
+
+
 def journal_path(cfg):
     return cfg.repo / cfg.data['journal']
 
@@ -160,6 +171,7 @@ def start(cfg):
 
 def _start_body(cfg, pull_ok=True):
     ensure_hook(cfg)
+    ensure_attrs(cfg)
     lines = [t(cfg.lang, 'header', holder=cfg.holder(), now=f'{dt.datetime.now():%Y-%m-%d %H:%M}')]
     marker = state(cfg, 'conflict.txt')
     if marker.exists():
@@ -168,6 +180,11 @@ def _start_body(cfg, pull_ok=True):
     if wanted and wanted != __version__:
         lines.append(t(cfg.lang, 'version_mismatch', installed=__version__, wanted=wanted))
     lines.append(pull(cfg) if pull_ok else t(cfg.lang, 'not_pulled'))
+    since_f = state(cfg, 'auto_since')                          # the next session-end journal line starts from here
+    if not since_f.exists():
+        head = git(cfg, 'rev-parse', 'HEAD').stdout.strip()
+        if head:
+            since_f.write_text(head, encoding='utf-8')
     stamp = state(cfg, 'last_start')
     since = stamp.read_text(encoding='utf-8').strip() if stamp.exists() else (dt.date.today() - dt.timedelta(days=7)).isoformat()
     n = int(cfg.data['sync'].get('log_commits', 12))
@@ -217,26 +234,60 @@ def _start_body(cfg, pull_ok=True):
     print('\n'.join(lines))
 
 
-def stop(cfg):
+def stop(cfg, session_end=False):
     if not is_repo(cfg):
         return
     with serialized(cfg) as got:
         if not got:
             print(t(cfg.lang, 'busy')); return
-        _stop_body(cfg)
+        _stop_body(cfg, session_end)
 
 
-def _stop_body(cfg):
-    ensure_hook(cfg)
+def _stage(cfg):
     git(cfg, 'add', '-A')
-    staged = [l for l in git(cfg, '-c', 'core.quotePath=false', 'diff', '--cached', '--name-only').stdout.splitlines() if l.strip()]
+    return [l for l in git(cfg, '-c', 'core.quotePath=false', 'diff', '--cached', '--name-only').stdout.splitlines() if l.strip()]
+
+
+def _session_files(cfg, staged):
+    """What this person changed since the last session-end line: their sync commits since then (autosync and turn-end
+    pushes commit along the way), then what is staged now. Conversation records and the journal itself left out."""
+    from .convo import is_record
+    since_f = state(cfg, 'auto_since')
+    since = since_f.read_text(encoding='utf-8').strip() if since_f.exists() else ''
+    names = []
+    if since and git(cfg, 'cat-file', '-e', since + '^{commit}').returncode == 0:
+        log = git(cfg, '-c', 'core.quotePath=false', 'log', '--reverse', '--format=', '--name-only',
+                  f'--grep=^sync({cfg.who()}):', f'{since}..HEAD').stdout
+        names = [l.strip() for l in log.splitlines() if l.strip()]
+    out = []
+    for f in names + staged:
+        if f not in out and f != cfg.data['journal'] and not is_record(cfg, f):
+            out.append(f)
+    return out
+
+
+def _stop_body(cfg, session_end=False):
+    ensure_hook(cfg)
+    ensure_attrs(cfg)
+    staged = _stage(cfg)
+    if session_end:                                             # one journal line per session, not one per autosync run
+        files = _session_files(cfg, staged)
+        if files:
+            preview = ', '.join(files[:6]) + (f' … ({len(files)})' if len(files) > 6 else '')
+            note(cfg, t(cfg.lang, 'auto_changed', n=len(files), files=preview), auto=True)
+            staged = _stage(cfg)
+    try:
+        _commit_push(cfg, staged)
+    finally:
+        if session_end:
+            try:
+                state(cfg, 'auto_since').write_text(git(cfg, 'rev-parse', 'HEAD').stdout.strip(), encoding='utf-8')
+            except OSError:
+                pass
+
+
+def _commit_push(cfg, staged):
     if staged:
-        from .convo import is_record
-        work = [f for f in staged if not is_record(cfg, f)]          # conversation records change every turn; not journal news
-        if work:
-            preview = ', '.join(work[:6]) + (f' … ({len(work)})' if len(work) > 6 else '')
-            note(cfg, t(cfg.lang, 'auto_changed', n=len(work), files=preview), auto=True)
-            git(cfg, 'add', '-A')
         r = git(cfg, 'commit', '-q', '-m', f'sync({cfg.who()}): {dt.datetime.now():%Y-%m-%d %H:%M} · {len(staged)} files')
         if r.returncode != 0:
             print(t(cfg.lang, 'commit_blocked') + '\n' + (r.stdout + r.stderr).strip()[:800])

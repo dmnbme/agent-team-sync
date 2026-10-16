@@ -17,8 +17,8 @@
 两种方式。checkout 只需要 git,而且不挑 hook 拿到的是哪个 `python3`:
 
 ```bash
-git clone --branch v0.1.9 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # 成员
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.9"  # 或:维护者,得到 team-sync 命令
+git clone --branch v0.1.10 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # 成员
+pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.10"  # 或:维护者,得到 team-sync 命令
 ```
 
 用 `init` 配置过的仓库里,所有东西都走提交在仓库里的引导脚本 `bin/team_sync.py`,两种装法它都能找到包。
@@ -42,7 +42,7 @@ team-sync autosync on
 ## 成员配置机器(一次)
 
 ```bash
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.9"
+pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.10"
 git clone <团队仓库> ~/team && cd ~/team
 cp ~/Downloads/env.team.txt .env.team
 team-sync start && team-sync autosync on && team-sync paths
@@ -61,6 +61,10 @@ team-sync start && team-sync autosync on && team-sync paths
 | 其它 | 不需要 | 后台 autosync 照常跑;规则文件里写着「先跑 team-sync start」 |
 
 指令文件只有一份正本 `AGENTS.md`,`CLAUDE.md` 和 `CODEBUDDY.md` 各一行 `@AGENTS.md`。
+
+日志:会话结束时(`stop --session-end`,Claude Code 和 CodeBuddy 的 SessionEnd 用它)自动记一行,列出这次会话里改过的文件,
+包括中途被后台同步提交掉的;后台同步和每轮结束的推送不记。`.gitattributes` 里日志设为 `merge=union`(工具自动加),
+两个人同时追加的行会合并,不会冲突。
 
 ## 对话记录
 

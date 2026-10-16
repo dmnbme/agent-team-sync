@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ -f bin/team_sync.py ] && python3 bin/team_sync.py stop || true",
+            "command": "[ -f bin/team_sync.py ] && python3 bin/team_sync.py stop --session-end || true",
             "timeout": 120
           }
         ]

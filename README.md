@@ -30,8 +30,10 @@ Drive: /Users/alice/Library/CloudStorage/GoogleDrive-…/Shared drives/Team
 Rules: see AGENTS.md. Take a lease through the scripts before touching shared resources.
 ```
 
-That block is injected into the agent's context by a hook. When the session ends, local changes are committed with an
-automatic journal line ("changed 3 files: …"), rebased on the remote and pushed. A conflict is never left half-merged:
+That block is injected into the agent's context by a hook. When the session ends, local changes are committed with one
+automatic journal line listing the files changed during the session ("changed 3 files: …"), rebased on the remote and
+pushed; autosync and turn-end pushes commit without journal lines. The journal is marked `merge=union` in
+`.gitattributes` (added automatically), so two people's new lines merge instead of conflicting. A conflict is never left half-merged:
 the rebase is aborted, local work stays, a marker is written, a desktop notification fires, and the next session start prints it.
 
 ## Install
@@ -39,8 +41,8 @@ the rebase is aborted, local work stays, a marker is written, a desktop notifica
 Two ways. The checkout needs git only and works with whatever `python3` a hook happens to get:
 
 ```bash
-git clone --branch v0.1.9 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # members
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.9"  # or: maintainers, gives the team-sync command
+git clone --branch v0.1.10 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # members
+pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.10"  # or: maintainers, gives the team-sync command
 ```
 
 Inside a repo set up with `init`, everything runs through the committed launcher `bin/team_sync.py`, which finds the package either way.
@@ -84,7 +86,7 @@ git add -A && git commit -m "team-sync" && git push
 ## Set up a machine (each member, once)
 
 ```bash
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.9"
+pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.10"
 git clone <team repo> ~/team && cd ~/team
 cp ~/Downloads/env.team.txt .env.team        # the file the maintainer sent
 team-sync start                              # installs the pre-commit gate, prints the summary
