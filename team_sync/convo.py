@@ -171,7 +171,8 @@ def _read(path, offset, parse):
         except ValueError:
             continue
         if isinstance(d, dict):
-            out.extend(parse(d))
+            mid = d.get('uuid') or (d.get('payload') or {}).get('id') or ''   # message id: survives forks and continuations
+            out.extend(item + (mid,) for item in parse(d))
     return out, offset + end
 
 
@@ -199,7 +200,7 @@ def _tz(iso):
 
 def _append(msgs, new):
     """msgs rows are [first_iso, role, text, last_iso]; one agent turn becomes one row."""
-    for iso, role, text in new:
+    for iso, role, text, *_ in new:
         last = msgs[-1] if msgs else None
         a, b = (_secs(last[3]) if last else None), _secs(iso)
         close = a is not None and b is not None and abs(b - a) < MERGE_GAP_SEC
@@ -273,6 +274,8 @@ def _render(cfg, head, summaries, msgs, limit):
     out = [t(L, 'convo_title', who=head['who'], agent=agent, date=_local(head['start'], '%Y-%m-%d')),
            '<!-- team-sync-convo ' + _dump(head) + ' -->', '',
            t(L, 'convo_intro', limit=limit, tz=_tz(head.get('last') or '') or '?')]
+    if head.get('parent'):
+        out.append(t(L, 'convo_parent', file=head['parent']))
     if head.get('title'):
         out.append(t(L, 'convo_opening', title=head['title']))
     out += ['', t(L, 'convo_summaries'), SUM_START, summaries.strip() or t(L, 'convo_none'), SUM_END, '',
@@ -285,8 +288,65 @@ def _render(cfg, head, summaries, msgs, limit):
     return '\n'.join(out).rstrip('\n') + '\n'
 
 
+# ---------------------------------------------------------------- forks and continuations
+# A forked or continued session starts with a copy of the earlier transcript (same message ids). Each message belongs to the
+# first session that recorded it; later sessions skip it and link to that record instead of repeating it.
+def _index_path(cfg):
+    return cfg.state_dir / 'convo' / 'index.json'
+
+
+def _caches(cfg):
+    return [p for p in (cfg.state_dir / 'convo').glob('*.json') if p.name != 'index.json']
+
+
+def _first_seen(path):
+    """(first timestamp, creation time) of a transcript, to order sessions that share history."""
+    first = ''
+    try:
+        with open(path, encoding='utf-8') as f:
+            for line in f:
+                try:
+                    first = json.loads(line).get('timestamp') or ''
+                except ValueError:
+                    continue
+                if first:
+                    break
+        st = os.stat(path)
+        return first, getattr(st, 'st_birthtime', st.st_mtime)
+    except OSError:
+        return first, 0.0
+
+
+def _index(cfg):
+    """message id -> cache key of the session that owns it; built once from every cached session, oldest first."""
+    ip = _index_path(cfg)
+    idx = _load(ip)
+    if idx.get('v') == 1:
+        return idx
+    idx = {'v': 1, 'ids': {}}
+    sessions = []
+    for cp in _caches(cfg):
+        st = _load(cp)
+        if st.get('path') and os.path.isfile(st['path']):
+            sessions.append((_first_seen(st['path']), cp, st))
+    for _, cp, st in sorted(sessions, key=lambda x: x[0]):
+        agent = cp.stem.split('_', 1)[0]
+        if agent not in PARSERS:
+            continue
+        msgs, _ = _read(st['path'], 0, PARSERS[agent])
+        for m in msgs:
+            if m[-1]:
+                idx['ids'].setdefault(m[-1], cp.stem)
+    _save(ip, idx)
+    for _, cp, st in sessions:                                    # re-render every record so the copies drop out
+        agent, sid = cp.stem.split('_', 1)
+        _save(cp, {'path': st['path'], 'offset': 0, 'msgs': [], 'file': st.get('file'), 'off': st.get('off')})
+        update(cfg, agent, {'session_id': sid, 'transcript_path': st['path'], 'no_ask': True}, idx)
+    return idx
+
+
 # ---------------------------------------------------------------- turn end (hook)
-def update(cfg, agent, data):
+def update(cfg, agent, data, idx=None):
     """Turn-end hook body. Returns None, or the text of a request asking the agent to compact the record."""
     c = recording(cfg)
     if c is None or agent not in PARSERS:
@@ -296,11 +356,23 @@ def update(cfg, agent, data):
     if not sid or not tpath or not os.path.isfile(tpath):
         return None
     cf = _cache(cfg, agent, sid)
+    idx = idx if idx is not None else _index(cfg)                 # first run on a machine: builds it and re-renders old records
     st = _load(cf)
     if st.get('path') != tpath or os.path.getsize(tpath) < int(st.get('offset') or 0):
         st = {'path': tpath, 'offset': 0, 'msgs': [], 'file': st.get('file'), 'off': st.get('off')}
     new, st['offset'] = _read(tpath, int(st.get('offset') or 0), PARSERS[agent])
-    new = [(iso, role, redact(cfg, text)) for iso, role, text in new]
+    me, own = cf.stem, []
+    for iso, role, text, mid in new:
+        owner = idx['ids'].get(mid) if mid else None
+        if owner and owner != me:                                 # copied from an earlier session
+            st['parent'] = owner                                 # the latest session it copied from
+            continue
+        if mid:
+            idx['ids'][mid] = me
+        own.append((iso, role, redact(cfg, text)))
+    if new and any(m[-1] for m in new):
+        _save(_index_path(cfg), idx)
+    new = own
     if any(role == 'user' and any(k in text for k in NO_RECORD) for _, role, text in new):
         st['off'] = True
     if st.get('off'):
@@ -312,6 +384,8 @@ def update(cfg, agent, data):
     _append(st['msgs'], new)
     msgs = st['msgs']
     if not msgs:
+        if st.get('file') and (cfg.repo / _dir(cfg) / st['file']).exists():     # everything in it was a copy
+            (cfg.repo / _dir(cfg) / st['file']).unlink()
         _save(cf, st)
         return None
     if not st.get('file'):
@@ -320,8 +394,12 @@ def update(cfg, agent, data):
     old = path.read_text(encoding='utf-8') if path.exists() else ''
     prev = _head_of(old)
     first_user = next((m[2] for m in msgs if m[1] == 'user'), '')
-    head = {'session': sid, 'agent': agent, 'who': cfg.who(), 'title': prev.get('title') or re.sub(r'\s+', ' ', first_user)[:60],
+    head = {'session': sid, 'agent': agent, 'who': cfg.who(), 'title': re.sub(r'\s+', ' ', first_user)[:60] or prev.get('title', ''),
             'start': msgs[0][0], 'last': msgs[-1][3], 'through': prev.get('through') or ''}
+    if st.get('parent'):
+        pf = _load(cfg.state_dir / 'convo' / f"{st['parent']}.json").get('file')
+        if pf:
+            head['parent'] = f"{_dir(cfg)}/{pf}"
     limit, keep = int(c.get('compact_chars') or 30000), int(c.get('keep_recent_chars') or 8000)
     shown = msgs
     tail = data.get('last_assistant_message')                     # Codex passes the final message; use it if not on disk yet
@@ -345,7 +423,7 @@ def _ask(cfg, st, head, msgs, limit, keep, data, path):
     if size <= limit:
         st['asks'] = 0
         return None
-    if data.get('stop_hook_active') or time.time() - float(st.get('asked') or 0) < ASK_AGAIN_SEC or int(st.get('asks') or 0) >= MAX_ASKS:
+    if data.get('no_ask') or data.get('stop_hook_active') or time.time() - float(st.get('asked') or 0) < ASK_AGAIN_SEC or int(st.get('asks') or 0) >= MAX_ASKS:
         return None
     acc, cut = 0, None
     for i in range(len(raw) - 1, -1, -1):                         # keep the newest `keep` characters verbatim

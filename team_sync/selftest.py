@@ -180,6 +180,20 @@ def run(cfg, keep=False):
     check('"不记录这段对话" leaves no record', not list((A / cdir).glob('*/*_norecord.md')))
     check('session start lists recent records', cdir + '/' in ts(A, 'start'))
 
+    print('7b forked session: copied history is not recorded twice')
+    pa, pb = tmp / 'claude-parent.jsonl', tmp / 'claude-fork.jsonl'
+    base = [dict(cu('2026-01-05T00:00:00.000Z', '父会话的第一个问题'), uuid='u1', sessionId='parentsess'),
+            dict(ca('2026-01-05T00:00:10.000Z', tx('父会话的回答')), uuid='u2', sessionId='parentsess')]
+    jsonl(pa, base)
+    ts(A, 'hook', 'claude', 'stop', stdin=json.dumps({'session_id': 'parentsess', 'transcript_path': str(pa)}))
+    jsonl(pb, base + [dict(cu('2026-01-05T00:05:00.000Z', 'fork 之后的新问题'), uuid='u3', sessionId='forksess1'),
+                      dict(ca('2026-01-05T00:05:10.000Z', tx('fork 之后的回答')), uuid='u4', sessionId='forksess1')])
+    ts(A, 'hook', 'claude', 'stop', stdin=json.dumps({'session_id': 'forksess1', 'transcript_path': str(pb)}))
+    fk = next(iter((A / cdir).glob('*/*_claude_forksess*.md')), None)
+    fb = fk.read_text(encoding='utf-8') if fk else ''
+    check('fork record: only its own messages, linked to the parent', 'fork 之后的新问题' in fb and '父会话的第一个问题' not in fb.split('<!-- summaries:end -->')[-1]
+          and '_claude_parentse' in fb)
+
     print('8 journal: concurrent lines merge; auto line only at session end')
     C = tmp / 'carol'
     sh(tmp, 'git', 'clone', '-q', 'origin.git', 'carol')

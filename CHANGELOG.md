@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.14 (2026-10-17)
+
+- Conversation records handle forked and continued sessions. Both start with a copy of the earlier transcript (same message ids), which used to be recorded again in a new file. Each message now belongs to the first session that recorded it, through a per-machine index of message ids; later sessions record only their own messages and link to the record they continue. On first run the index is built from every cached session, oldest first, and existing records are re-rendered without the copies.
+
 ## 0.1.13 (2026-10-17)
 
 - Codex hooks ignore scripted `codex exec` runs (rollout `session_meta.source == "exec"`): no summary, no conversation record, no sync. Batch jobs that call Codex inside the repo used to pull and push on every call and leave one record each.
