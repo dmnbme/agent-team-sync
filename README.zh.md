@@ -17,8 +17,8 @@
 两种方式。checkout 只需要 git,而且不挑 hook 拿到的是哪个 `python3`:
 
 ```bash
-git clone --branch v0.1.7 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # 成员
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.7"  # 或:维护者,得到 team-sync 命令
+git clone --branch v0.1.8 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # 成员
+pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.8"  # 或:维护者,得到 team-sync 命令
 ```
 
 用 `init` 配置过的仓库里,所有东西都走提交在仓库里的引导脚本 `bin/team_sync.py`,两种装法它都能找到包。
@@ -42,7 +42,7 @@ team-sync autosync on
 ## 成员配置机器(一次)
 
 ```bash
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.7"
+pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.8"
 git clone <团队仓库> ~/team && cd ~/team
 cp ~/Downloads/env.team.txt .env.team
 team-sync start && team-sync autosync on && team-sync paths
@@ -54,13 +54,28 @@ team-sync start && team-sync autosync on && team-sync paths
 
 | agent | 文件 | 事件 |
 |---|---|---|
-| Claude Code | `.claude/settings.json` | SessionStart → `start`,SessionEnd → `stop` |
+| Claude Code | `.claude/settings.json` | SessionStart → `start`;Stop → 对话记录(见下);SessionEnd → `stop` |
 | Antigravity | `.agents/hooks.json` | PreInvocation → 每个对话注入一次摘要(`injectSteps`);Stop → 空闲时 `stop` |
 | CodeBuddy / WorkBuddy | `.codebuddy/settings.json` | SessionStart → `start`,SessionEnd → `stop` |
-| Codex | `.codex/hooks.json` | SessionStart → 摘要作为 `additionalContext` 注入;Stop(后台运行)→ 每轮结束后 `stop`。Codex 会先让你信任这个项目,再在 `/hooks` 里逐个信任钩子(各一次);不用 SessionEnd,Codex 只给它 3 秒,不够拉取加推送 |
+| Codex | `.codex/hooks.json` | SessionStart → 摘要作为 `additionalContext` 注入;Stop → 每轮结束后写对话记录,再在独立进程里 `stop`。Codex 会先让你信任这个项目,再在 `/hooks` 里逐个信任钩子(各一次,钩子文件改了要再信任);不用 SessionEnd,Codex 只给它 3 秒,不够拉取加推送 |
 | 其它 | 不需要 | 后台 autosync 照常跑;规则文件里写着「先跑 team-sync start」 |
 
 指令文件只有一份正本 `AGENTS.md`,`CLAUDE.md` 和 `CODEBUDDY.md` 各一行 `@AGENTS.md`。
+
+## 对话记录
+
+可选。`team-sync.json` 里写上 `"convo": {"dir": "docs/对话记录"}`,Claude Code 和 Codex 每轮结束时的 hook 就会把用户和
+agent 说的话写进 `<dir>/年-月/<日期>_<谁>_<agent>_<会话>.md`,一个会话一个文件,随其它改动一起提交。工具调用、工具输出、
+思考过程和注入的上下文都不记;密钥形状的字符串按门禁的规则换成 `[redacted]`。新会话开头的摘要会列出最近 5 份记录,
+agent 需要时自己打开。
+
+原文超过 `compact_chars`(默认 30000 字)时,hook 在这一轮结束时提出请求:由正在运行的 agent 把较早的部分写成摘要,
+运行 `team-sync convo compact --file F --through T`(摘要从标准输入给)。最新的 `keep_recent_chars`(默认 8000 字)保持原文。
+不需要 API key,也不额外调用模型:摘要由当前的 agent 来写。
+
+不记录:用户消息里出现 `[no-record]` 或「不记录这段对话」,这个会话的记录会被删掉,已经推送的部分仍在 git 历史里。
+`TEAM_SYNC_NO_CONVO=1`,或者 env 文件里写 `<前缀>_CONVO=off`,这台电脑就不记录。Antigravity 和 CodeBuddy 暂不支持。
+仓库里的人都能看到这些记录,开启前告诉被记录的人。
 
 ## 租约
 
@@ -76,6 +91,7 @@ with lease('collect:telegram:main', ttl=1800, note='fetch'):
 
 ```
 team-sync note "做了什么 / 改了哪 / 下一步"
+team-sync convo list | compact      对话记录
 team-sync cursor show|pull|push
 team-sync fingerprint [--check|--quick]
 team-sync selftest          临时目录双 clone 模拟,约 20 秒

@@ -5,6 +5,7 @@
   team-sync note "what / where / next"
   team-sync hook antigravity pre_invocation|stop     stdin JSON → stdout JSON (Antigravity hook protocol)
   team-sync hook codex session_start|stop            stdin JSON → stdout JSON (Codex hook protocol)
+  team-sync hook claude stop                         stdin JSON → stdout JSON (Claude Code Stop hook: conversation record)
 
 All git operations on one machine (hooks, background autosync, manual) are serialised with a file lock.
 A pull conflict is never left half-merged: rebase is aborted, local work stays, a marker is written and shown next start.
@@ -170,7 +171,9 @@ def _start_body(cfg, pull_ok=True):
     stamp = state(cfg, 'last_start')
     since = stamp.read_text(encoding='utf-8').strip() if stamp.exists() else (dt.date.today() - dt.timedelta(days=7)).isoformat()
     n = int(cfg.data['sync'].get('log_commits', 12))
-    log = git(cfg, 'log', f'--since={since}', '--format=%h %ad %an: %s', '--date=short', f'-{n}').stdout.strip()
+    cdir = ((cfg.data.get('convo') or {}).get('dir') or '').strip('/')
+    only = ['--', '.', f':(exclude){cdir}'] if cdir else []        # commits that only touched conversation records are noise here
+    log = git(cfg, 'log', f'--since={since}', '--format=%h %ad %an: %s', '--date=short', f'-{n}', *only).stdout.strip()
     lines.append(t(cfg.lang, 'recent_commits', since=since[:10]) + '\n' + ('   ' + log.replace('\n', '\n   ') if log else '   ' + t(cfg.lang, 'none')))
     j = journal_path(cfg)
     if j.exists():
@@ -199,6 +202,13 @@ def _start_body(cfg, pull_ok=True):
             lines.append(fp)
     except Exception as e:
         lines.append(f'fingerprint: check failed ({e})')
+    try:
+        from .convo import recent
+        rc = recent(cfg)
+        if rc:
+            lines.append(rc)
+    except Exception as e:  # noqa: BLE001
+        lines.append(f'conversation records: listing failed ({e})')
     if (cfg.data.get('drive') or {}).get('root_name'):
         d = cfg.drive()
         lines.append(t(cfg.lang, 'drive', path=d) if d else t(cfg.lang, 'drive_missing', key=cfg.key('DRIVE_ROOT')))
@@ -221,9 +231,12 @@ def _stop_body(cfg):
     git(cfg, 'add', '-A')
     staged = [l for l in git(cfg, '-c', 'core.quotePath=false', 'diff', '--cached', '--name-only').stdout.splitlines() if l.strip()]
     if staged:
-        preview = ', '.join(staged[:6]) + (f' … ({len(staged)})' if len(staged) > 6 else '')
-        note(cfg, t(cfg.lang, 'auto_changed', n=len(staged), files=preview), auto=True)
-        git(cfg, 'add', '-A')
+        from .convo import is_record
+        work = [f for f in staged if not is_record(cfg, f)]          # conversation records change every turn; not journal news
+        if work:
+            preview = ', '.join(work[:6]) + (f' … ({len(work)})' if len(work) > 6 else '')
+            note(cfg, t(cfg.lang, 'auto_changed', n=len(work), files=preview), auto=True)
+            git(cfg, 'add', '-A')
         r = git(cfg, 'commit', '-q', '-m', f'sync({cfg.who()}): {dt.datetime.now():%Y-%m-%d %H:%M} · {len(staged)} files')
         if r.returncode != 0:
             print(t(cfg.lang, 'commit_blocked') + '\n' + (r.stdout + r.stderr).strip()[:800])
@@ -262,8 +275,37 @@ def _capture(fn):
     return buf.getvalue().strip()
 
 
+def _convo(cfg, agent, data):
+    """Update this session's conversation record; returns a compaction request for the agent, or None. Never raises."""
+    try:
+        from .convo import update
+        return update(cfg, agent, data)
+    except Exception as e:  # noqa: BLE001
+        try:
+            with open(state(cfg, 'convo.log'), 'a', encoding='utf-8') as f:
+                f.write(f'{dt.datetime.now():%Y-%m-%d %H:%M} {agent}: {e!r}\n')
+        except Exception:
+            pass
+        return None
+
+
+def _stop_in_background(cfg):
+    """Run `stop` detached so the hook returns at once (the hook itself has to stay synchronous to answer)."""
+    if os.environ.get('TEAM_SYNC_FOREGROUND'):                   # selftest
+        _capture(lambda: stop(cfg)); return
+    shim = cfg.repo / 'bin' / 'team_sync.py'
+    cmd = [sys.executable, str(shim)] if shim.exists() else [sys.executable, '-m', 'team_sync']
+    kw = {'cwd': str(cfg.repo), 'stdin': subprocess.DEVNULL, 'close_fds': True}
+    if platform.system() == 'Windows':
+        kw['creationflags'] = 0x00000008 | 0x00000200 | 0x08000000   # detached, new process group, no window
+    else:
+        kw['start_new_session'] = True
+    with open(state(cfg, 'hook_stop.log'), 'a', encoding='utf-8') as log:
+        subprocess.Popen(cmd + ['--repo', str(cfg.repo), 'stop'], stdout=log, stderr=log, **kw)
+
+
 def hook(cfg, kind, event):
-    """Agent hook adapters (Antigravity, Codex): stdin JSON in, stdout JSON out. Never raise, never print anything but JSON."""
+    """Agent hook adapters (Antigravity, Codex, Claude Code): stdin JSON in, stdout JSON out. Never raise, never print anything but JSON."""
     try:
         raw = sys.stdin.read() if not sys.stdin.isatty() else ''
         data = json.loads(raw) if raw.strip() else {}
@@ -297,9 +339,19 @@ def hook(cfg, kind, event):
             if text:
                 out = {'hookSpecificOutput': {'hookEventName': 'SessionStart', 'additionalContext': t(cfg.lang, 'hook_inject_prefix') + text}}
         elif kind == 'codex' and event == 'stop':
-            # Stop fires when a turn ends; the hook file runs it with async: true, so the push never holds up the user.
+            # Stop fires when a turn ends. Write the conversation record, then push in a detached process so the user is
+            # never held up. A compaction request continues the turn; the push then happens when that turn ends.
             # (SessionEnd is capped at 3 s by Codex, too short for pull + push; the background autosync covers the rest.)
-            _capture(lambda: stop(cfg))
+            ask = _convo(cfg, 'codex', data)
+            if ask:
+                out = {'decision': 'block', 'reason': ask}
+            else:
+                _stop_in_background(cfg)
+        elif kind == 'claude' and event == 'stop':
+            # Claude Code pushes at SessionEnd and through autosync; at each turn end only the conversation record is written.
+            ask = _convo(cfg, 'claude', data)
+            if ask:
+                out = {'decision': 'block', 'reason': ask}
     except Exception:
         out = {}
     sys.stdout.write(json.dumps(out, ensure_ascii=False))

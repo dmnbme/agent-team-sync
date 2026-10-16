@@ -22,6 +22,17 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "d=\"${CLAUDE_PROJECT_DIR:-.}\"; [ -f \"$d/bin/team_sync.py\" ] && python3 \"$d/bin/team_sync.py\" hook claude stop || true",
+            "timeout": 60
+          }
+        ]
+      }
     ]
   }
 }

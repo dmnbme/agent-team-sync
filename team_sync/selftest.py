@@ -1,7 +1,9 @@
-"""Two-clone simulation in a temp dir: proves sync, conflict handling, leases (if configured) and the Antigravity and Codex hooks.
+"""Two-clone simulation in a temp dir: proves sync, conflict handling, leases (if configured), the Antigravity, Codex and
+Claude Code hooks, and conversation records.
 Never touches the real origin. `team-sync selftest [--keep]`"""
 import json
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -23,9 +25,16 @@ import os
 CLEAN_ENV = {k: v for k, v in os.environ.items() if k not in ('TEAM_SYNC_REPO', 'CLAUDE_PROJECT_DIR', 'CODEBUDDY_PROJECT_DIR')}
 
 
-def sh(cwd, *args, stdin=None):
-    r = subprocess.run(list(args), cwd=cwd, capture_output=True, text=True, input=stdin, encoding='utf-8', errors='replace', env=CLEAN_ENV)
+def sh(cwd, *args, stdin=None, env=None):
+    r = subprocess.run(list(args), cwd=cwd, capture_output=True, text=True, input=stdin, encoding='utf-8', errors='replace',
+                       env=dict(CLEAN_ENV, **(env or {})))
     return (r.stdout + r.stderr).strip()
+
+
+def jsonl(path, rows):
+    with open(path, 'a', encoding='utf-8') as f:
+        for r in rows:
+            f.write(json.dumps(r, ensure_ascii=False) + '\n')
 
 
 def run(cfg, keep=False):
@@ -40,7 +49,7 @@ def run(cfg, keep=False):
             shutil.copy2(cfg.repo / CONFIG_NAME, tmp / who / CONFIG_NAME)
         (tmp / who / cfg.data['env_file']).write_text('\n'.join([f"{cfg.key('WHO')}={who}"] + env_lines) + '\n', encoding='utf-8')
     A, B = tmp / 'alice', tmp / 'bob'
-    ts = lambda cwd, *a, stdin=None: sh(cwd, sys.executable, '-m', 'team_sync', '--repo', str(cwd), *a, stdin=stdin)   # explicit repo: never touch the real one
+    ts = lambda cwd, *a, stdin=None, env=None: sh(cwd, sys.executable, '-m', 'team_sync', '--repo', str(cwd), *a, stdin=stdin, env=env)   # explicit repo: never touch the real one
     jdir = pathlib.Path(cfg.data['journal']).parent
     fa, fb = A / jdir / 'selftest_note.md', B / jdir / 'selftest_note.md'
 
@@ -90,10 +99,77 @@ def run(cfg, keep=False):
         check('SessionStart returns additionalContext', hso.get('hookEventName') == 'SessionStart' and len(hso.get('additionalContext', '')) > 100)
     except Exception as e:  # noqa: BLE001
         check('SessionStart returns additionalContext', False, str(e)[:80])
+    cdir = (jdir / 'convo_selftest').as_posix()                    # alice records conversations, with tiny limits
+    conf = json.loads((A / CONFIG_NAME).read_text(encoding='utf-8'))
+    conf['convo'] = {'dir': cdir, 'compact_chars': 600, 'keep_recent_chars': 200}
+    (A / CONFIG_NAME).write_text(json.dumps(conf, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    ro = tmp / 'rollout-2026-01-02T00-00-00-selftestcodex1.jsonl'
+    um = lambda when, text: {'timestamp': when, 'type': 'response_item', 'payload': {'type': 'message', 'role': 'user', 'content': [{'type': 'input_text', 'text': text}]}}
+    jsonl(ro, [{'timestamp': '2026-01-02T00:00:00.000Z', 'type': 'session_meta', 'payload': {'id': 'selftestcodex1'}},
+               um('2026-01-02T00:00:01.000Z', '# AGENTS.md instructions for /x\nINJECTED-SHOULD-NOT-APPEAR'),
+               um('2026-01-02T00:00:01.500Z', '<environment_context>ENV-SHOULD-NOT-APPEAR</environment_context>'),
+               um('2026-01-02T00:00:02.000Z', '帮我把招生情报整理成表格'),
+               {'timestamp': '2026-01-02T00:00:03.000Z', 'type': 'response_item', 'payload': {'type': 'function_call', 'name': 'shell', 'arguments': 'TOOL-SHOULD-NOT-APPEAR'}},
+               {'timestamp': '2026-01-02T00:00:04.000Z', 'type': 'response_item', 'payload': {'type': 'message', 'role': 'assistant', 'content': [{'type': 'output_text', 'text': '表格已经放好了。'}]}}])
     (A / jdir / 'selftest_codex.md').write_text('from a codex turn\n', encoding='utf-8')   # alice: bob still has the step-3 conflict
-    out = ts(A, 'hook', 'codex', 'stop', stdin='{"hook_event_name":"Stop"}')
+    out = ts(A, 'hook', 'codex', 'stop', stdin=json.dumps({'hook_event_name': 'Stop', 'session_id': 'selftestcodex1', 'transcript_path': str(ro)}),
+             env={'TEAM_SYNC_FOREGROUND': '1'})
     check('Stop prints only JSON', out.strip() == '{}', out[:80])
-    check('Stop commits + pushes the turn', 'selftest_codex.md' in sh(tmp, 'git', '--git-dir', 'origin.git', 'log', '-1', '--name-only', '--format='))
+    pushed = sh(tmp, 'git', '--git-dir', 'origin.git', 'log', '-1', '--name-only', '--format=')
+    check('Stop commits + pushes the turn, record included', 'selftest_codex.md' in pushed and '_codex_selftest.md' in pushed, pushed.replace('\n', ' ')[:120])
+    rec = next(iter((A / cdir).glob('*/*_codex_*.md')), None)
+    body = rec.read_text(encoding='utf-8') if rec else ''
+    check('Codex record: user + agent text only', '帮我把招生情报整理成表格' in body and '表格已经放好了' in body
+          and not any(x in body for x in ('INJECTED-SHOULD', 'ENV-SHOULD', 'TOOL-SHOULD')))
+    check('journal auto line leaves records out', cdir not in (A / cfg.data['journal']).read_text(encoding='utf-8'))
+
+    print('7 Claude Code conversation record')
+    tr = tmp / 'claude-selftest.jsonl'
+    cu = lambda when, text, **kw: dict({'type': 'user', 'origin': {'kind': 'human'}, 'timestamp': when, 'message': {'role': 'user', 'content': text}}, **kw)
+    ca = lambda when, *blocks: {'type': 'assistant', 'timestamp': when, 'message': {'role': 'assistant', 'model': 'x', 'content': list(blocks)}}
+    tx = lambda text: {'type': 'text', 'text': text}
+    jsonl(tr, [cu('2026-01-03T00:00:00.000Z', '把首页标题改短一点'),
+               ca('2026-01-03T00:00:05.000Z', tx('先看一下首页。'), {'type': 'tool_use', 'id': 't1', 'name': 'Read', 'input': {}}),
+               {'type': 'user', 'timestamp': '2026-01-03T00:00:06.000Z', 'toolUseResult': {}, 'message': {'role': 'user', 'content': [{'type': 'tool_result', 'tool_use_id': 't1', 'content': 'TOOL-OUTPUT-SHOULD-NOT-APPEAR'}]}},
+               {'type': 'user', 'isMeta': True, 'timestamp': '2026-01-03T00:00:06.500Z', 'message': {'role': 'user', 'content': 'META-SHOULD-NOT-APPEAR'}},
+               cu('2026-01-03T00:00:06.700Z', '<task-notification>NOTIFY-SHOULD-NOT-APPEAR</task-notification>', origin={'kind': 'task-notification'}),
+               {'type': 'attachment', 'timestamp': '2026-01-03T00:00:07.000Z', 'attachment': {'type': 'queued_command', 'commandMode': 'prompt', 'origin': {'kind': 'human'}, 'prompt': '顺便把副标题也改了'}},
+               ca('2026-01-03T00:00:09.000Z', {'type': 'tool_use', 'id': 't2', 'name': 'AskUserQuestion', 'input': {'questions': [{'question': '副标题用哪版?', 'options': [{'label': '短版', 'description': '一行'}, {'label': '长版', 'description': '两行'}]}]}}),
+               {'type': 'user', 'timestamp': '2026-01-03T00:00:20.000Z', 'toolUseResult': {'answers': {'副标题用哪版?': '短版'}}, 'message': {'role': 'user', 'content': [{'type': 'tool_result', 'tool_use_id': 't2', 'content': 'answered'}]}},
+               ca('2026-01-03T00:00:30.000Z', tx('改好了。顺手发现一个密钥 sk-' + 'a' * 40 + ' 和 password=hunter2xyz,已经提醒。'))])
+    stdin = lambda **kw: json.dumps(dict({'session_id': 'selftestclaude1', 'transcript_path': str(tr), 'hook_event_name': 'Stop'}, **kw))
+    out = ts(A, 'hook', 'claude', 'stop', stdin=stdin())
+    check('short record: Stop returns empty JSON', out.strip() == '{}', out[:80])
+    rec = next(iter((A / cdir).glob('*/*_claude_*.md')), None)
+    body = rec.read_text(encoding='utf-8') if rec else ''
+    check('both sides, mid-turn message, question and answer', all(x in body for x in (
+        '把首页标题改短一点', '先看一下首页', '顺便把副标题也改了', '[question] 副标题用哪版?', '[answer] 副标题用哪版? → 短版', '改好了')))
+    check('no tool output, meta or notifications', not any(x in body for x in ('TOOL-OUTPUT', 'META-SHOULD', 'NOTIFY-SHOULD')))
+    check('secrets redacted', 'sk-aaaa' not in body and 'hunter2xyz' not in body and '[redacted]' in body)
+    jsonl(tr, [row for k in range(12) for row in (cu(f'2026-01-03T01:{k:02d}:00.000Z', f'第 {k} 个问题:' + '内容' * 20),
+                                                   ca(f'2026-01-03T01:{k:02d}:30.000Z', tx(f'第 {k} 个回答:' + '回答' * 20)))])
+    out = ts(A, 'hook', 'claude', 'stop', stdin=stdin(stop_hook_active=True))
+    check('no compaction request inside a hook continuation', out.strip() == '{}', out[:80])
+    out = ts(A, 'hook', 'claude', 'stop', stdin=stdin())
+    try:
+        d = json.loads(out); reason = d.get('reason', '')
+    except ValueError:
+        d, reason = {}, ''
+    check('over the limit: asks the agent to compact', d.get('decision') == 'block' and 'convo compact' in reason, out[:80])
+    fm, tm = re.search(r'--file "([^"]+)"', reason), re.search(r'--through (\S+)', reason)
+    if fm and tm:
+        out = ts(A, 'convo', 'compact', '--file', fm.group(1), '--through', tm.group(1), stdin='用户要求把首页标题和副标题改短,选了短版,已改好;之后连续问了十几个测试问题。')
+        body = rec.read_text(encoding='utf-8'); raw = body.split('<!-- summaries:end -->', 1)[-1]
+        check('compact writes the summary, drops what it covers', '选了短版' in body and '把首页标题改短一点' not in raw and '第 11 个回答' in raw, out[:80])
+        out = ts(A, 'hook', 'claude', 'stop', stdin=stdin())
+        check('back under the limit afterwards', out.strip() == '{}', out[:80])
+    else:
+        check('compact writes the summary, drops what it covers', False, 'no --file / --through in the request')
+    tr2 = tmp / 'claude-selftest-2.jsonl'
+    jsonl(tr2, [cu('2026-01-04T00:00:00.000Z', '不记录这段对话。帮我看看这份私人文件'), ca('2026-01-04T00:00:05.000Z', tx('好的。'))])
+    ts(A, 'hook', 'claude', 'stop', stdin=json.dumps({'session_id': 'norecord1', 'transcript_path': str(tr2)}))
+    check('"不记录这段对话" leaves no record', not list((A / cdir).glob('*/*_norecord.md')))
+    check('session start lists recent records', cdir + '/' in ts(A, 'start'))
 
     if keep:
         print(f'\nkept: {tmp}')

@@ -14,8 +14,12 @@ def main(argv=None):
     sub.add_parser('stop', help='commit + pull --rebase + push (session end hook / autosync)')
     sub.add_parser('status', help='git status and last commits')
     n = sub.add_parser('note', help='append a line to the team journal'); n.add_argument('text', nargs='+')
-    h = sub.add_parser('hook', help='agent hook adapters (stdin JSON → stdout JSON)'); h.add_argument('kind', choices=['antigravity', 'codex']); h.add_argument('event')
+    h = sub.add_parser('hook', help='agent hook adapters (stdin JSON → stdout JSON)'); h.add_argument('kind', choices=['antigravity', 'codex', 'claude']); h.add_argument('event')
     sub.add_parser('gate', help='secret gate (used by the pre-commit hook)')
+    cv = sub.add_parser('convo', help='conversation records'); cvs = cv.add_subparsers(dest='op', required=True)
+    x = cvs.add_parser('compact', help='fold older messages into the summary (the turn-end hook asks the agent to run this); summary on stdin')
+    x.add_argument('--file', required=True); x.add_argument('--through', required=True); x.add_argument('--summary-file')
+    cvs.add_parser('list', help='recent records')
     l = sub.add_parser('lease', help='leases'); ls = l.add_subparsers(dest='op', required=True)
     for op in ('acquire', 'renew', 'release'):
         x = ls.add_parser(op); x.add_argument('resource'); x.add_argument('--ttl', type=int, default=900)
@@ -62,6 +66,12 @@ def main(argv=None):
             from .sync import note; note(cfg, ' '.join(ns.text)); from .msg import t; print(t(cfg.lang, 'noted', journal=cfg.data['journal'])); return 0
         if ns.cmd == 'hook':
             from .sync import hook; hook(cfg, ns.kind, ns.event); return 0
+        if ns.cmd == 'convo':
+            from . import convo
+            if ns.op == 'list':
+                print(convo.recent(cfg, 20) or '(none)'); return 0
+            text = open(ns.summary_file, encoding='utf-8').read() if ns.summary_file else sys.stdin.read()
+            return convo.compact(cfg, ns.file, ns.through, text)
         if ns.cmd == 'gate':
             from .gate import run; return run(cfg)
         if ns.cmd == 'lease':

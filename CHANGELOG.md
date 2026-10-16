@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.8 (2026-10-17)
+
+- Conversation records, off unless `convo.dir` is set in `team-sync.json`. At every turn end the Claude Code and Codex hooks write the session's dialogue to one Markdown file per session under that directory: no tool calls, tool output, thinking or injected context; the user's answers to the agent's multiple-choice questions are kept; credential-shaped strings are redacted with the gate's patterns. Past `convo.compact_chars` the hook asks the running agent to fold the older part into a summary through the new `team-sync convo compact`. `team-sync convo list` and the session-start summary show recent records. Opt out per session with `[no-record]` / `不记录这段对话`, per machine with `TEAM_SYNC_NO_CONVO=1` or `<PREFIX>_CONVO=off`.
+- Claude Code: new Stop hook, `team-sync hook claude stop`, in the `.claude/settings.json` template.
+- Codex: the Stop hook is synchronous now, so it can answer with a compaction request; commit + push run in a detached process, so the turn still ends at once. The hook definition changed, so Codex asks to trust it again.
+- The automatic journal line and the summary's recent-commits list leave conversation records out.
+- selftest covers both agents' records: filtering, redaction, the compaction request, `convo compact`, opt-out.
+
 ## 0.1.7 (2026-10-17)
 
 - Codex support. `team-sync init` now writes `.codex/hooks.json`: SessionStart returns the team summary as `additionalContext`, and Stop runs `stop` in the background after each turn (`async: true`). New adapter `team-sync hook codex session_start|stop`. SessionEnd is not used because Codex caps it at 3 s, too short for pull + push; the background autosync covers edits made after the last turn. Codex asks once to trust the project and once per hook (`/hooks`), and again whenever the hook file changes.

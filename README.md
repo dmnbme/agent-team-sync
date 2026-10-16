@@ -39,8 +39,8 @@ the rebase is aborted, local work stays, a marker is written, a desktop notifica
 Two ways. The checkout needs git only and works with whatever `python3` a hook happens to get:
 
 ```bash
-git clone --branch v0.1.7 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # members
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.7"  # or: maintainers, gives the team-sync command
+git clone --branch v0.1.8 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # members
+pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.8"  # or: maintainers, gives the team-sync command
 ```
 
 Inside a repo set up with `init`, everything runs through the committed launcher `bin/team_sync.py`, which finds the package either way.
@@ -84,7 +84,7 @@ git add -A && git commit -m "team-sync" && git push
 ## Set up a machine (each member, once)
 
 ```bash
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.7"
+pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.8"
 git clone <team repo> ~/team && cd ~/team
 cp ~/Downloads/env.team.txt .env.team        # the file the maintainer sent
 team-sync start                              # installs the pre-commit gate, prints the summary
@@ -98,13 +98,31 @@ Then open the folder in the agent. The hook files committed by `init` make every
 
 | agent | file | events |
 |---|---|---|
-| Claude Code | `.claude/settings.json` | SessionStart → `start`, SessionEnd → `stop` |
+| Claude Code | `.claude/settings.json` | SessionStart → `start`; Stop → conversation record (see below); SessionEnd → `stop` |
 | Antigravity | `.agents/hooks.json` | PreInvocation → summary injected once per conversation via `injectSteps`; Stop → `stop` when idle |
 | CodeBuddy / WorkBuddy | `.codebuddy/settings.json` | SessionStart → `start`, SessionEnd → `stop` |
-| Codex | `.codex/hooks.json` | SessionStart → summary returned as `additionalContext`; Stop (async) → `stop` after each turn. Codex asks once to trust the project and once to trust each hook (`/hooks`); SessionEnd is not used because Codex caps it at 3 s, too short for pull + push |
+| Codex | `.codex/hooks.json` | SessionStart → summary returned as `additionalContext`; Stop → conversation record, then `stop` in a detached process after each turn. Codex asks once to trust the project and once to trust each hook (`/hooks`), again whenever the hook file changes; SessionEnd is not used because Codex caps it at 3 s, too short for pull + push |
 | anything else | none needed | the background autosync still runs; the rules file says to run `team-sync start` |
 
 Instruction files: `AGENTS.md` is the single source; `CLAUDE.md` and `CODEBUDDY.md` contain one line, `@AGENTS.md`.
+
+## Conversation records
+
+Optional. With `"convo": {"dir": "docs/conversations"}` in `team-sync.json`, the turn-end hook of Claude Code and Codex
+writes what the user and the agent said to `<dir>/YYYY-MM/<date>_<who>_<agent>_<session>.md`, one file per session,
+committed with everything else. Tool calls, tool output, thinking and injected context are left out; credential-shaped
+strings are redacted with the gate's patterns. The session-start summary lists the five most recent records, so an agent
+can open the one it needs.
+
+When the verbatim part passes `compact_chars` (default 30000), the hook answers the turn end with a request: the running
+agent summarises the older part and runs `team-sync convo compact --file F --through T` with the summary on stdin. The
+newest `keep_recent_chars` (default 8000) stay verbatim. No API key and no extra model call: the agent that is already
+running writes the summary.
+
+Opting out: a user message containing `[no-record]` (or `不记录这段对话`) removes that session's record; whatever was
+already pushed stays in git history. `TEAM_SYNC_NO_CONVO=1`, or `<PREFIX>_CONVO=off` in the env file, turns recording off on
+one machine. Antigravity and CodeBuddy are not covered yet. Everyone with access to the repo can read the records, so tell
+the people whose conversations are recorded.
 
 ## Leases
 
@@ -128,6 +146,7 @@ The holder id is `person@machine:pid`, so two agents on one laptop are two holde
 
 ```
 team-sync note "what / where / next"      append to the team journal
+team-sync convo list | compact            conversation records
 team-sync cursor show|pull|push           shared "how far did we get" counters
 team-sync fingerprint [--check|--quick]   manifest for the data directory kept out of git
 team-sync gate                            secret gate (installed as pre-commit automatically)
