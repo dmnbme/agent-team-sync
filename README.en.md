@@ -56,11 +56,27 @@ Rules: see AGENTS.md. Take a lease through the scripts before touching shared re
 | Codex | `.codex/hooks.json` | session start: summary; each turn: conversation record, then commit and push in the background. Scripted `codex exec` runs are skipped |
 | Antigravity | `.agents/hooks.json` | summary once per conversation; commit and push when idle |
 | WorkBuddy / CodeBuddy | `.codebuddy/settings.json` | session start: summary; session end: commit and push |
-| any other agent | none | the background sync still runs; the rules file tells the agent to run `start` first |
+| any other agent | none | the background sync still runs; the opening summary depends on the model running `start` as the rules say, which it may skip (see the next section) |
 
 The team rules live in one file, `AGENTS.md`; `CLAUDE.md` and `CODEBUDDY.md` contain a single line, `@AGENTS.md`.
 
 The first time Codex opens the project, the user trusts the folder and then clicks Trust on each hook under Settings → Hooks; a changed hook file needs Trust again. Conversation records cover Claude Code and Codex; Antigravity and WorkBuddy are not supported yet.
+
+## What is guaranteed and what depends on the model following instructions
+
+Enforced by the system, whether or not the model complies:
+
+- **Background sync**: the operating system's scheduler pulls, commits and pushes every 5 minutes, without going through the agent.
+- **Secret gate**: it runs as git's pre-commit hook, so a `git commit` issued by the agent is checked too.
+- **Leases**: they are taken inside the scripts, so running the script always checks first.
+- **Agents with hooks**: the opening team summary, conversation records and the end-of-session commit and push run from the agent's hooks.
+
+Written in the rules, so the model has to follow them:
+
+- **Running `start` first, in agents without hooks.** The model may skip it or run it late. Until it runs, the agent does not know what teammates changed recently and may keep editing old files; the background sync pulls new content within 5 minutes, and edits made in that window can conflict with someone else's. Agents without hooks have no conversation records either.
+- **For every agent**: adding a journal line after a piece of work, reading the relevant knowledge file before starting, upgrading when the summary reports a version mismatch, summarising an overlong conversation record. These are requests; the model may not follow them.
+
+A rule that must hold every time belongs in a script, a git hook or an agent hook, and not only in the rules file.
 
 ## Compared with hosted collaboration platforms
 

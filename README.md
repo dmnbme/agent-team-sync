@@ -56,11 +56,27 @@ Drive: /Users/alice/Library/CloudStorage/GoogleDrive-…/Shared drives/Team
 | Codex | `.codex/hooks.json` | 会话开始：摘要；每轮结束：对话记录，再在后台提交推送。脚本调用的 `codex exec` 自动跳过 |
 | Antigravity | `.agents/hooks.json` | 每个对话注入一次摘要；空闲时提交推送 |
 | WorkBuddy / CodeBuddy | `.codebuddy/settings.json` | 会话开始：摘要；会话结束：提交推送 |
-| 其他 agent | 不需要 | 后台同步照常运行；守则里写明开工前先运行 `start` |
+| 其他 agent | 不需要 | 后台同步照常运行；开头摘要要靠模型按守则自己运行 `start`，可能被跳过（见下一节） |
 
 团队守则只有一份正本 `AGENTS.md`；`CLAUDE.md` 和 `CODEBUDDY.md` 各只有一行 `@AGENTS.md`。
 
 Codex 第一次打开项目时，要信任这个文件夹，再在「设置 → Hooks」里给每个 hook 点一次 Trust；hook 文件改动后要重新点。对话记录目前支持 Claude Code 和 Codex，Antigravity 和 WorkBuddy 还不支持。
+
+## 哪些有保证，哪些要靠模型遵守指令
+
+由系统执行、和模型是否照做无关：
+
+- **后台同步**：操作系统的定时任务每 5 分钟拉取、提交、推送一次，不经过 agent。
+- **密钥门禁**：装在 git 的 pre-commit 里，agent 自己执行 `git commit` 也会被检查。
+- **租约**：写在脚本里，只要运行这个脚本就一定先检查。
+- **有 hook 的 agent**：开头的团队摘要、对话记录、会话结束时的提交推送，由 agent 的 hook 自动运行。
+
+写在守则里、要靠模型遵守的：
+
+- **没有 hook 的 agent 开工前运行 `start`**：模型可能跳过或拖后。没运行时，它不知道队友最近改了什么，可能在旧文件上继续改；后台同步最多 5 分钟后会拉到新内容，这段时间里的改动可能和别人冲突。没有 hook 的 agent 也没有对话记录。
+- **所有 agent 都一样**：做完一块工作记一行日志、开始前先读对应的知识文档、提示版本不一致时升级、对话记录过长时写摘要。这些都是请求，模型可能不照做。
+
+需要稳定执行的规则，应该写进脚本、git hook 或 agent 的 hook，不要只写在守则里。
 
 ## 和托管的协作平台相比
 
