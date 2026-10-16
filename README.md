@@ -39,8 +39,8 @@ the rebase is aborted, local work stays, a marker is written, a desktop notifica
 Two ways. The checkout needs git only and works with whatever `python3` a hook happens to get:
 
 ```bash
-git clone --branch v0.1.8 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # members
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.8"  # or: maintainers, gives the team-sync command
+git clone --branch v0.1.9 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # members
+pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.9"  # or: maintainers, gives the team-sync command
 ```
 
 Inside a repo set up with `init`, everything runs through the committed launcher `bin/team_sync.py`, which finds the package either way.
@@ -84,7 +84,7 @@ git add -A && git commit -m "team-sync" && git push
 ## Set up a machine (each member, once)
 
 ```bash
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.8"
+pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.9"
 git clone <team repo> ~/team && cd ~/team
 cp ~/Downloads/env.team.txt .env.team        # the file the maintainer sent
 team-sync start                              # installs the pre-commit gate, prints the summary
@@ -111,7 +111,8 @@ Instruction files: `AGENTS.md` is the single source; `CLAUDE.md` and `CODEBUDDY.
 Optional. With `"convo": {"dir": "docs/conversations"}` in `team-sync.json`, the turn-end hook of Claude Code and Codex
 writes what the user and the agent said to `<dir>/YYYY-MM/<date>_<who>_<agent>_<session>.md`, one file per session,
 committed with everything else. Tool calls, tool output, thinking and injected context are left out; credential-shaped
-strings are redacted with the gate's patterns. The session-start summary lists the five most recent records, so an agent
+strings are redacted with the gate's patterns, and e-mail addresses become `[email]` unless their domain is listed in
+`convo.keep_email_domains`. The session-start summary lists the five most recent records, so an agent
 can open the one it needs.
 
 When the verbatim part passes `compact_chars` (default 30000), the hook answers the turn end with a request: the running

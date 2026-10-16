@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.9 (2026-10-17)
+
+- Conversation records mask e-mail addresses as `[email]`, except for domains listed in `convo.keep_email_domains` (for example the team's own). Records quote what agents say about customers, and the repo is shared.
+
 ## 0.1.8 (2026-10-17)
 
 - Conversation records, off unless `convo.dir` is set in `team-sync.json`. At every turn end the Claude Code and Codex hooks write the session's dialogue to one Markdown file per session under that directory: no tool calls, tool output, thinking or injected context; the user's answers to the agent's multiple-choice questions are kept; credential-shaped strings are redacted with the gate's patterns. Past `convo.compact_chars` the hook asks the running agent to fold the older part into a summary through the new `team-sync convo compact`. `team-sync convo list` and the session-start summary show recent records. Opt out per session with `[no-record]` / `不记录这段对话`, per machine with `TEAM_SYNC_NO_CONVO=1` or `<PREFIX>_CONVO=off`.

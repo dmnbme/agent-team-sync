@@ -24,7 +24,7 @@ DEFAULTS = {
     'fingerprint': {'root': '', 'manifest': 'data_manifest.json'},
     'drive': {'root_name': '', 'marker': '', 'patterns': []},
     'sync': {'autosync_interval_sec': 300, 'log_commits': 12, 'journal_tail': 8, 'inject_ttl_hours': 6},
-    'convo': {'dir': '', 'compact_chars': 30000, 'keep_recent_chars': 8000},   # dir set = conversation records on
+    'convo': {'dir': '', 'compact_chars': 30000, 'keep_recent_chars': 8000, 'keep_email_domains': []},   # dir set = records on
     'source': 'git+https://github.com/dmnbme/agent-team-sync',
     'version': '',
 }

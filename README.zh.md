@@ -17,8 +17,8 @@
 两种方式。checkout 只需要 git,而且不挑 hook 拿到的是哪个 `python3`:
 
 ```bash
-git clone --branch v0.1.8 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # 成员
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.8"  # 或:维护者,得到 team-sync 命令
+git clone --branch v0.1.9 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # 成员
+pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.9"  # 或:维护者,得到 team-sync 命令
 ```
 
 用 `init` 配置过的仓库里,所有东西都走提交在仓库里的引导脚本 `bin/team_sync.py`,两种装法它都能找到包。
@@ -42,7 +42,7 @@ team-sync autosync on
 ## 成员配置机器(一次)
 
 ```bash
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.8"
+pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.9"
 git clone <团队仓库> ~/team && cd ~/team
 cp ~/Downloads/env.team.txt .env.team
 team-sync start && team-sync autosync on && team-sync paths
@@ -66,7 +66,7 @@ team-sync start && team-sync autosync on && team-sync paths
 
 可选。`team-sync.json` 里写上 `"convo": {"dir": "docs/对话记录"}`,Claude Code 和 Codex 每轮结束时的 hook 就会把用户和
 agent 说的话写进 `<dir>/年-月/<日期>_<谁>_<agent>_<会话>.md`,一个会话一个文件,随其它改动一起提交。工具调用、工具输出、
-思考过程和注入的上下文都不记;密钥形状的字符串按门禁的规则换成 `[redacted]`。新会话开头的摘要会列出最近 5 份记录,
+思考过程和注入的上下文都不记;密钥形状的字符串按门禁的规则换成 `[redacted]`,邮箱地址换成 `[email]`(`convo.keep_email_domains` 里列出的域名除外)。新会话开头的摘要会列出最近 5 份记录,
 agent 需要时自己打开。
 
 原文超过 `compact_chars`(默认 30000 字)时,hook 在这一轮结束时提出请求:由正在运行的 agent 把较早的部分写成摘要,

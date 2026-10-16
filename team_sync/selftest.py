@@ -136,7 +136,7 @@ def run(cfg, keep=False):
                {'type': 'attachment', 'timestamp': '2026-01-03T00:00:07.000Z', 'attachment': {'type': 'queued_command', 'commandMode': 'prompt', 'origin': {'kind': 'human'}, 'prompt': '顺便把副标题也改了'}},
                ca('2026-01-03T00:00:09.000Z', {'type': 'tool_use', 'id': 't2', 'name': 'AskUserQuestion', 'input': {'questions': [{'question': '副标题用哪版?', 'options': [{'label': '短版', 'description': '一行'}, {'label': '长版', 'description': '两行'}]}]}}),
                {'type': 'user', 'timestamp': '2026-01-03T00:00:20.000Z', 'toolUseResult': {'answers': {'副标题用哪版?': '短版'}}, 'message': {'role': 'user', 'content': [{'type': 'tool_result', 'tool_use_id': 't2', 'content': 'answered'}]}},
-               ca('2026-01-03T00:00:30.000Z', tx('改好了。顺手发现一个密钥 sk-' + 'a' * 40 + ' 和 password=hunter2xyz,已经提醒。'))])
+               ca('2026-01-03T00:00:30.000Z', tx('改好了。顺手发现一个密钥 sk-' + 'a' * 40 + ' 和 password=hunter2xyz,已经提醒用户 some.one+x@gmail.com。'))])
     stdin = lambda **kw: json.dumps(dict({'session_id': 'selftestclaude1', 'transcript_path': str(tr), 'hook_event_name': 'Stop'}, **kw))
     out = ts(A, 'hook', 'claude', 'stop', stdin=stdin())
     check('short record: Stop returns empty JSON', out.strip() == '{}', out[:80])
@@ -145,7 +145,8 @@ def run(cfg, keep=False):
     check('both sides, mid-turn message, question and answer', all(x in body for x in (
         '把首页标题改短一点', '先看一下首页', '顺便把副标题也改了', '[question] 副标题用哪版?', '[answer] 副标题用哪版? → 短版', '改好了')))
     check('no tool output, meta or notifications', not any(x in body for x in ('TOOL-OUTPUT', 'META-SHOULD', 'NOTIFY-SHOULD')))
-    check('secrets redacted', 'sk-aaaa' not in body and 'hunter2xyz' not in body and '[redacted]' in body)
+    check('secrets and e-mail addresses redacted', 'sk-aaaa' not in body and 'hunter2xyz' not in body and '[redacted]' in body
+          and 'some.one' not in body and '[email]' in body)
     jsonl(tr, [row for k in range(12) for row in (cu(f'2026-01-03T01:{k:02d}:00.000Z', f'第 {k} 个问题:' + '内容' * 20),
                                                    ca(f'2026-01-03T01:{k:02d}:30.000Z', tx(f'第 {k} 个回答:' + '回答' * 20)))])
     out = ts(A, 'hook', 'claude', 'stop', stdin=stdin(stop_hook_active=True))

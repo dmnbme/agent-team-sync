@@ -27,6 +27,7 @@ MSG_MARK = re.compile(r'^<!-- msg (\S+) (?:user|agent) -->$', re.M)
 SUM_START, SUM_END = '<!-- summaries:start -->', '<!-- summaries:end -->'
 KEYVAL = re.compile(r'(?i)((?:password|passwd|secret|token|api[_-]?key|密码)\s*[:=：]\s*)(["\']?)[^\s"\'，。]{6,}')
 REMINDER = re.compile(r'<system-reminder>.*?</system-reminder>', re.S)
+EMAIL = re.compile(r'(?<![\w.+-])[\w.+-]+@((?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,})')
 SKIP_PREFIX = ('<', '[Request interrupted', 'This session is being continued', '# AGENTS.md instructions',
                '[team-sync hook', '[团队同步 hook')
 MERGE_GAP_SEC = 1800            # consecutive agent texts closer than this are one turn, shown as one block
@@ -49,9 +50,13 @@ def is_record(cfg, relpath):
 
 
 def redact(cfg, text):
+    """Credential-shaped strings → [redacted]; e-mail addresses → [email] unless on one of convo.keep_email_domains."""
     extra = [x for x in cfg.data.get('gate_extra_patterns', []) if x]
     pat = re.compile(LINE_PAT.pattern + ('|' + '|'.join(extra) if extra else ''))
-    return KEYVAL.sub(lambda m: m.group(1) + m.group(2) + '[redacted]', pat.sub('[redacted]', text))
+    text = KEYVAL.sub(lambda m: m.group(1) + m.group(2) + '[redacted]', pat.sub('[redacted]', text))
+    keep = tuple(d.lower().lstrip('@.') for d in (cfg.data.get('convo') or {}).get('keep_email_domains') or [])
+    own = lambda dom: any(dom == k or dom.endswith('.' + k) for k in keep)
+    return EMAIL.sub(lambda m: m.group(0) if own(m.group(1).lower()) else '[email]', text)
 
 
 # ---------------------------------------------------------------- transcript parsers: one JSON object in, [(iso, role, text)] out
