@@ -77,6 +77,8 @@ def serialized(cfg, wait=90):
 
 
 def notify(cfg, text):
+    if os.environ.get('TEAM_SYNC_NO_NOTIFY'):                  # selftest: its conflicts are staged, not news
+        return
     safe = text.replace('"', "'").replace("'", '')[:200]
     try:
         if platform.system() == 'Darwin':

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.11 (2026-10-17)
+
+- selftest no longer shows desktop notifications. Its staged conflict in step 3 used to raise a real "pull conflicted" notification several times per run, which looked like a problem in the team repo. `TEAM_SYNC_NO_NOTIFY=1` turns notifications off.
+
 ## 0.1.10 (2026-10-17)
 
 - The journal is marked `merge=union` in `.gitattributes`, added automatically by `start` / `stop`. Two people appending to the journal at the same time used to conflict, which stopped autosync on one machine until someone resolved it by hand; their lines now merge.

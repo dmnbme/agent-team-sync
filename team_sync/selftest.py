@@ -23,6 +23,7 @@ def check(name, ok, detail=''):
 import os
 
 CLEAN_ENV = {k: v for k, v in os.environ.items() if k not in ('TEAM_SYNC_REPO', 'CLAUDE_PROJECT_DIR', 'CODEBUDDY_PROJECT_DIR')}
+CLEAN_ENV['TEAM_SYNC_NO_NOTIFY'] = '1'          # the staged conflict in step 3 must not pop up on the desktop
 
 
 def sh(cwd, *args, stdin=None, env=None):
