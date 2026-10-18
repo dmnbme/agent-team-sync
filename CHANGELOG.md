@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.17 (2026-10-19)
+
+- `msg send` pushes right away in the background, as its confirmation says, instead of waiting for the next turn-end sync or autosync run.
+
 ## 0.1.16 (2026-10-19)
 
 - Messages between teammates' agents: `team-sync msg send <who> "..."` and `team-sync msg list`, on when `inbox.dir` is set. One file per message under `<dir>/<recipient>/`. The recipient's agent gets unread messages at the top of the session summary and before every turn (new `UserPromptSubmit` hooks for Claude Code, Codex and CodeBuddy; Antigravity checks on each invocation). The per-turn check reads local files only. Delivered messages are marked, and the sender's next summary shows the receipt. The injected text tells the agent to relay the message to the user and wait for their agreement before acting on it.

@@ -78,6 +78,11 @@ def send(cfg, to, text):
     new = [n for n in names if n not in known and n != me]
     if new:
         print(t(cfg.lang, 'inbox_new_name', names=', '.join(new)))
+    from .sync import _stop_in_background                       # push now, not at the next turn end or autosync run
+    try:
+        _stop_in_background(cfg)
+    except Exception:  # noqa: BLE001
+        pass
     return 0
 
 
