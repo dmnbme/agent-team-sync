@@ -8,6 +8,7 @@ import sys
 import urllib.request
 
 from . import __version__
+from .net import ssl_context
 
 SCHEMA = pathlib.Path(__file__).parent / 'resources' / 'schema.sql'
 UA = 'Mozilla/5.0 (agent-team-sync/' + __version__ + ')'
@@ -24,7 +25,7 @@ def _run_sql(sql, dsn=None, project_ref=None, token=None):
                                      data=json.dumps({'query': sql}).encode(),
                                      headers={'Authorization': f'Bearer {token}', 'User-Agent': UA, 'Content-Type': 'application/json'})
         try:
-            with urllib.request.urlopen(req, timeout=120) as resp:
+            with urllib.request.urlopen(req, timeout=120, context=ssl_context()) as resp:
                 return resp.read().decode()
         except urllib.error.HTTPError as e:
             raise SystemExit(f'HTTP {e.code}: {e.read().decode()[:500]}')

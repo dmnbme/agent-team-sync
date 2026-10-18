@@ -16,6 +16,7 @@ import urllib.error
 import urllib.request
 
 from .config import Config
+from .net import ssl_context
 from .msg import t
 
 
@@ -33,7 +34,7 @@ def _rpc(cfg, fn, **args):
         data=json.dumps({'p_key': team, **args}).encode(),
         headers={'apikey': key, 'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'})
     try:
-        with urllib.request.urlopen(req, timeout=20) as r:
+        with urllib.request.urlopen(req, timeout=20, context=ssl_context()) as r:
             return json.loads(r.read() or 'null')
     except urllib.error.HTTPError as e:
         body = e.read().decode(errors='replace')[:300]

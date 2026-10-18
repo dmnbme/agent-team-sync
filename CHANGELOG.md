@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.15 (2026-10-19)
+
+- `autosync on` works on Python 3.9 to 3.11 again. One f-string reused its own quote inside a replacement field, which only Python 3.12+ accepts, so importing the autosync module failed on the macOS system Python and the five-minute background sync could not be installed.
+- HTTPS calls (leases, cursors, database setup) work on the python.org macOS build before its "Install Certificates" step. When Python's default context has no CA certificates, team-sync loads them from certifi, or from the system bundle.
+
 ## 0.1.14 (2026-10-17)
 
 - Conversation records handle forked and continued sessions. Both start with a copy of the earlier transcript (same message ids), which used to be recorded again in a new file. Each message now belongs to the first session that recorded it, through a per-machine index of message ids; later sessions record only their own messages and link to the record they continue. On first run the index is built from every cached session, oldest first, and existing records are re-rendered without the copies.

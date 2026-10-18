@@ -65,7 +65,8 @@ def on(cfg):
     elif sysname == 'Linux':
         d = os.path.expanduser('~/.config/systemd/user'); os.makedirs(d, exist_ok=True)
         name = f'team-sync-{cfg.repo.name}'
-        open(f'{d}/{name}.service', 'w').write(f'[Unit]\nDescription=team-sync autosync {repo}\n[Service]\nType=oneshot\nWorkingDirectory={repo}\nEnvironment=TEAM_SYNC_REPO={repo}\nExecStart={py} {' '.join(args)}\nStandardOutput=append:{log}\nStandardError=append:{log}\n')
+        cmd = ' '.join(args)                                     # kept out of the f-string: reusing the quote inside needs Python 3.12+
+        open(f'{d}/{name}.service', 'w').write(f'[Unit]\nDescription=team-sync autosync {repo}\n[Service]\nType=oneshot\nWorkingDirectory={repo}\nEnvironment=TEAM_SYNC_REPO={repo}\nExecStart={py} {cmd}\nStandardOutput=append:{log}\nStandardError=append:{log}\n')
         open(f'{d}/{name}.timer', 'w').write(f'[Unit]\nDescription=team-sync autosync timer\n[Timer]\nOnBootSec=1min\nOnUnitActiveSec={interval}s\n[Install]\nWantedBy=timers.target\n')
         subprocess.run(['systemctl', '--user', 'daemon-reload'], capture_output=True)
         r = subprocess.run(['systemctl', '--user', 'enable', '--now', f'{name}.timer'], capture_output=True, text=True)
