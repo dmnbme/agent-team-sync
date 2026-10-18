@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.16 (2026-10-19)
+
+- Messages between teammates' agents: `team-sync msg send <who> "..."` and `team-sync msg list`, on when `inbox.dir` is set. One file per message under `<dir>/<recipient>/`. The recipient's agent gets unread messages at the top of the session summary and before every turn (new `UserPromptSubmit` hooks for Claude Code, Codex and CodeBuddy; Antigravity checks on each invocation). The per-turn check reads local files only. Delivered messages are marked, and the sender's next summary shows the receipt. The injected text tells the agent to relay the message to the user and wait for their agreement before acting on it.
+- Commit identity: when no git e-mail is configured, session start sets this repository's `user.name` and `user.email` to the GitHub login and its noreply address (through `gh`, at most once a day). Before, git signed with the OS full name and `user@host.local`, which GitHub links to no account: no username, no avatar.
+- Codex members must Trust the new `team-sync: messages` hook in Settings → Hooks.
+
 ## 0.1.15 (2026-10-19)
 
 - `autosync on` works on Python 3.9 to 3.11 again. One f-string reused its own quote inside a replacement field, which only Python 3.12+ accepts, so importing the autosync module failed on the macOS system Python and the five-minute background sync could not be installed.

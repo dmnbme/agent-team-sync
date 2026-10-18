@@ -13,9 +13,11 @@ Once installed, members open their agent and work as usual. Hooks, git and the o
 - **A team summary at session start.** The tool pulls the latest changes, then puts recent commits, the last lines of the team journal, who is running which shared job, the shared drive's path and top-level folders, and the most recent conversation records into the agent's context.
 - **Automatic commit and push.** At session end, local changes are committed, rebased onto the remote and pushed. A background sync does the same every 5 minutes, independent of any agent.
 - **Conversation records.** After every turn, what the user and the agent said is written into the repository, one file per session. Tool calls and tool output are left out. When the verbatim text passes 30,000 characters, the agent that is already running summarises the older part. This needs no API key and no extra model call.
+- **Messages to a teammate's agent.** `team-sync msg send <who> "..."`. The message reaches the recipient's agent when they open a new session or send their next message, and the agent relays it to them word for word. The sender sees a delivery receipt in their next session summary.
 - **Leases.** Scripts that touch a shared resource, such as a scraper or a deploy, take a lease on it in the database before they start. If someone else holds it, the script stops and says who. Leases expire, so an agent that crashes halfway does not block the team.
 - **Secret gate.** Before each commit, added lines are checked; credential-shaped strings and files such as `.env` are refused. Conversation records have secrets and e-mail addresses replaced as well.
 - **Conflict handling.** If a pull conflicts, the merge is abandoned, local changes are kept, a desktop notification appears, and the next session start reports it. No half-merged files are left behind. Lines that several people append to the team journal at the same time merge automatically.
+- **Commits under the GitHub identity.** When a member's machine has no git e-mail configured, the repository's commit identity is set to their GitHub username and GitHub noreply address, so commits show the username and avatar instead of the computer's full name.
 - **Setup for non-technical members.** The setup script can be run by the member's own agent. When a step needs the person (signing in to GitHub, installing Google Drive), it stops and tells the agent what to ask the user to click.
 
 ## Three places for three kinds of data
@@ -52,10 +54,10 @@ Rules: see AGENTS.md. Take a lease through the scripts before touching shared re
 
 | agent | hook file | what runs |
 |---|---|---|
-| Claude Code | `.claude/settings.json` | session start: summary; each turn: conversation record; session end: commit, push and one journal line |
-| Codex | `.codex/hooks.json` | session start: summary; each turn: conversation record, then commit and push in the background. Scripted `codex exec` runs are skipped |
-| Antigravity | `.agents/hooks.json` | summary once per conversation; commit and push when idle |
-| WorkBuddy / CodeBuddy | `.codebuddy/settings.json` | session start: summary; session end: commit and push |
+| Claude Code | `.claude/settings.json` | session start: summary; before each turn: new messages; after each turn: conversation record; session end: commit, push and one journal line |
+| Codex | `.codex/hooks.json` | session start: summary; before each turn: new messages; after each turn: conversation record, then commit and push in the background. Scripted `codex exec` runs are skipped |
+| Antigravity | `.agents/hooks.json` | summary once per conversation; new messages on later calls; commit and push when idle |
+| WorkBuddy / CodeBuddy | `.codebuddy/settings.json` | session start: summary; before each turn: new messages; session end: commit and push |
 | any other agent | none | the background sync still runs; the opening summary depends on the model running `start` as the rules say, which it may skip (see the next section) |
 
 The team rules live in one file, `AGENTS.md`; `CLAUDE.md` and `CODEBUDDY.md` contain a single line, `@AGENTS.md`.
@@ -69,12 +71,12 @@ Enforced by the system, whether or not the model complies:
 - **Background sync**: the operating system's scheduler pulls, commits and pushes every 5 minutes, without going through the agent.
 - **Secret gate**: it runs as git's pre-commit hook, so a `git commit` issued by the agent is checked too.
 - **Leases**: they are taken inside the scripts, so running the script always checks first.
-- **Agents with hooks**: the opening team summary, conversation records and the end-of-session commit and push run from the agent's hooks.
+- **Agents with hooks**: the opening team summary, message delivery, conversation records and the end-of-session commit and push run from the agent's hooks.
 
 Written in the rules, so the model has to follow them:
 
 - **Running `start` first, in agents without hooks.** The model may skip it or run it late. Until it runs, the agent does not know what teammates changed recently and may keep editing old files; the background sync pulls new content within 5 minutes, and edits made in that window can conflict with someone else's. Agents without hooks have no conversation records either.
-- **For every agent**: adding a journal line after a piece of work, reading the relevant knowledge file before starting, upgrading when the summary reports a version mismatch, summarising an overlong conversation record. These are requests; the model may not follow them.
+- **For every agent**: adding a journal line after a piece of work, reading the relevant knowledge file before starting, upgrading when the summary reports a version mismatch, summarising an overlong conversation record, relaying a message to the user instead of acting on it. These are requests; the model may not follow them.
 
 A rule that must hold every time belongs in a script, a git hook or an agent hook, and not only in the rules file.
 
@@ -99,8 +101,8 @@ Good fit: teams of 3 to 10 people who already use coding agents and want to keep
 Requirements: git and Python 3.9 or later (the one that ships with macOS is enough). No third-party packages. The shared drive can be any service that syncs to a local folder: Google Drive, OneDrive and Dropbox are found automatically; for others (iCloud, Box, a NAS, Syncthing) add a path pattern under `drive.patterns` in `team-sync.json`, or set `<PREFIX>_DRIVE_ROOT=path` in each machine's `.env.team`.
 
 ```bash
-git clone --branch v0.1.14 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # members: git only
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.14"  # maintainers: gives the team-sync command
+git clone --branch v0.1.16 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # members: git only
+pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.16"  # maintainers: gives the team-sync command
 ```
 
 In a repository set up with `init`, everything runs through the committed launcher `bin/team_sync.py`, which finds the package either way. On Windows, install Python and make sure a `python3` command exists.
@@ -129,11 +131,12 @@ Main fields of `team-sync.json`:
   "fingerprint": { "root": "data", "manifest": "data_manifest.json" },
   "drive": { "root_name": "Team", "marker": "Papers" },
   "convo": { "dir": "docs/conversations", "compact_chars": 30000, "keep_recent_chars": 8000, "keep_email_domains": ["acme.com"] },
-  "version": "0.1.14"
+  "inbox": { "dir": "docs/inbox" },
+  "version": "0.1.16"
 }
 ```
 
-`version` pins the team's version: when a member's installed version differs, the opening summary says so, and the rules tell the agent to run `team-sync upgrade`. Without `convo`, conversations are not recorded.
+`version` pins the team's version: when a member's installed version differs, the opening summary says so, and the rules tell the agent to run `team-sync upgrade`. Without `convo`, conversations are not recorded; without `inbox`, messages are off.
 
 ## Member: set up a machine (once)
 
@@ -177,10 +180,27 @@ Add `"convo": {"dir": "docs/conversations"}` to `team-sync.json` to turn them on
 - Forked or continued sessions: the earlier conversation copied into the new session is not recorded again; the file starts with a link to the record it continues. This is decided by message id, with an index on each machine.
 - Everyone with access to the repository can read the records. Tell the people whose conversations are recorded before turning this on.
 
+## Messages
+
+Turn them on with `"inbox": {"dir": "docs/inbox"}` in `team-sync.json`.
+
+```
+team-sync msg send yulu "The pricing copy is done, see docs/pricing.md when you can"
+team-sync msg send yulu,hanyu "..."      several recipients, comma-separated
+team-sync msg list                       messages you sent and received, delivered or not
+```
+
+- The recipient is their short name, the `<PREFIX>_WHO` in their env file.
+- One file per message: `<dir>/<recipient>/<time>_<sender>.md`, so two people writing at once never conflict.
+- Delivery: at the top of the team summary when they open a new session, and checked again before every turn. The per-turn check only reads local files, with no network call, so it adds no wait; new messages arrive with the turn-end sync and the 5-minute background sync, so delivery can take a few minutes plus the recipient's next message.
+- Once delivered, the message is marked as such; the mark syncs back and appears in the sender's next session summary.
+- **Messages are relayed, never executed.** The injected text says it comes from a teammate, not from the user, and that the agent must tell the user first and act only once they agree. Otherwise anyone who can push to the repository could steer a teammate's agent, and the person would not know why it acted. This depends on the model following it; see the section above.
+
 ## Other commands
 
 ```
 team-sync note "what / where / next"      append a line to the team journal
+team-sync msg send <who> "..." | list     messages to teammates' agents
 team-sync convo list | compact            conversation records
 team-sync cursor show|pull|push           shared progress counters (for example, the last message a scraper fetched)
 team-sync fingerprint [--check|--quick]   manifest for a data directory kept out of git
@@ -194,7 +214,7 @@ team-sync paths | status | version
 - **Leases live in scripts.** Hooks differ between agents, need the user's trust, and can be bypassed by a command the agent writes itself. A script that is the only way to reach a resource cannot be skipped.
 - **Members receive only the team passphrase.** They never get the database's service key. The anonymous key is public anyway; with row-level security on, only functions that check the passphrase can read or write.
 - **"Who did what" comes from git.** Commits, the journal and conversation records are all in the repository, so any machine and any agent can read them, without relying on one vendor's memory feature.
-- **Self-test.** `team-sync selftest` builds a local remote and three clones in a temp directory and covers syncing, conflicts, leases, the hooks of four agents, conversation records (filtering, redaction, compaction, opting out) and concurrent journal appends, without touching a real remote.
+- **Self-test.** `team-sync selftest` builds a local remote and three clones in a temp directory and covers syncing, conflicts, leases, the hooks of four agents, conversation records (filtering, redaction, compaction, opting out) concurrent journal appends, message delivery and receipts, and the commit identity, without touching a real remote.
 
 ## Background
 

@@ -13,9 +13,11 @@
 - **开会话时给 agent 一份团队摘要**：先拉取最新内容，再把最近的提交、团队日志的最后几条、谁正在跑哪个共享任务、共享盘的位置和一级文件夹、最近的对话记录注入 agent 的上下文。
 - **自动提交和推送**：会话结束时提交本地改动、变基到远端、推送。另有每 5 分钟一次的后台同步，不依赖任何 agent。
 - **记录对话**：每轮结束后，把用户和 agent 说的话写进仓库，一个会话一个文件；不记工具调用和工具输出。原文超过 3 万字时，由正在运行的 agent 把较早的部分写成摘要，不需要 API key，也不额外调用模型。
+- **给队友的 agent 留言**：`team-sync msg send <谁> "……"`。对方开新对话或发下一条消息时，留言会出现在 agent 的上下文里，由 agent 原文转告本人；送达后发件人下次开会话能看到回执。
 - **租约**：采集、上线这类会动共享资源的脚本，开始前先在数据库里占用对应资源；别人正在跑时直接拒绝，并显示是谁在占用。租约会过期，某个 agent 中途崩溃也不会让全队卡住。
 - **密钥门禁**：git 提交前检查新增内容，发现密钥形状的字符串或 `.env` 这类文件就拒绝提交；对话记录里的密钥和邮箱地址也会被替换掉。
 - **冲突处理**：拉取冲突时放弃这次合并、保留本地改动，弹出桌面通知，下次开会话时再提示，不会留下改了一半的文件。多人同时往团队日志末尾追加内容，会自动合并。
+- **提交显示 GitHub 身份**：成员电脑没设置 git 邮箱时，自动把这个仓库的提交身份设成本人的 GitHub 用户名和 GitHub 隐私邮箱，提交记录里显示用户名和头像，而不是电脑上的全名。
 - **给不懂技术的成员装机**：安装脚本可以交给成员自己的 agent 来跑，遇到需要本人操作的步骤（登录 GitHub、安装 Google Drive）会停下来，告诉 agent 该让用户点哪里。
 
 ## 分三层存放
@@ -52,10 +54,10 @@ Drive: /Users/alice/Library/CloudStorage/GoogleDrive-…/Shared drives/Team
 
 | agent | hook 文件 | 做的事 |
 |---|---|---|
-| Claude Code | `.claude/settings.json` | 会话开始：摘要；每轮结束：对话记录；会话结束：提交推送并记一行日志 |
-| Codex | `.codex/hooks.json` | 会话开始：摘要；每轮结束：对话记录，再在后台提交推送。脚本调用的 `codex exec` 自动跳过 |
-| Antigravity | `.agents/hooks.json` | 每个对话注入一次摘要；空闲时提交推送 |
-| WorkBuddy / CodeBuddy | `.codebuddy/settings.json` | 会话开始：摘要；会话结束：提交推送 |
+| Claude Code | `.claude/settings.json` | 会话开始：摘要；每轮开始：新留言；每轮结束：对话记录；会话结束：提交推送并记一行日志 |
+| Codex | `.codex/hooks.json` | 会话开始：摘要；每轮开始：新留言；每轮结束：对话记录，再在后台提交推送。脚本调用的 `codex exec` 自动跳过 |
+| Antigravity | `.agents/hooks.json` | 每个对话注入一次摘要；之后每次调用检查新留言；空闲时提交推送 |
+| WorkBuddy / CodeBuddy | `.codebuddy/settings.json` | 会话开始：摘要；每轮开始：新留言；会话结束：提交推送 |
 | 其他 agent | 不需要 | 后台同步照常运行；开头摘要要靠模型按守则自己运行 `start`，可能被跳过（见下一节） |
 
 团队守则只有一份正本 `AGENTS.md`；`CLAUDE.md` 和 `CODEBUDDY.md` 各只有一行 `@AGENTS.md`。
@@ -69,12 +71,12 @@ Codex 第一次打开项目时，要信任这个文件夹，再在「设置 → 
 - **后台同步**：操作系统的定时任务每 5 分钟拉取、提交、推送一次，不经过 agent。
 - **密钥门禁**：装在 git 的 pre-commit 里，agent 自己执行 `git commit` 也会被检查。
 - **租约**：写在脚本里，只要运行这个脚本就一定先检查。
-- **有 hook 的 agent**：开头的团队摘要、对话记录、会话结束时的提交推送，由 agent 的 hook 自动运行。
+- **有 hook 的 agent**：开头的团队摘要、留言送达、对话记录、会话结束时的提交推送，由 agent 的 hook 自动运行。
 
 写在守则里、要靠模型遵守的：
 
 - **没有 hook 的 agent 开工前运行 `start`**：模型可能跳过或拖后。没运行时，它不知道队友最近改了什么，可能在旧文件上继续改；后台同步最多 5 分钟后会拉到新内容，这段时间里的改动可能和别人冲突。没有 hook 的 agent 也没有对话记录。
-- **所有 agent 都一样**：做完一块工作记一行日志、开始前先读对应的知识文档、提示版本不一致时升级、对话记录过长时写摘要。这些都是请求，模型可能不照做。
+- **所有 agent 都一样**：做完一块工作记一行日志、开始前先读对应的知识文档、提示版本不一致时升级、对话记录过长时写摘要、收到留言先转告用户而不是直接照做。这些都是请求，模型可能不照做。
 
 需要稳定执行的规则，应该写进脚本、git hook 或 agent 的 hook，不要只写在守则里。
 
@@ -99,8 +101,8 @@ Codex 第一次打开项目时，要信任这个文件夹，再在「设置 → 
 依赖只有 git 和 Python 3.9 以上（macOS 自带的就够），不用安装任何第三方库。共享盘可以是任何会同步成本地文件夹的服务：Google Drive、OneDrive、Dropbox 能自动找到，其他的（坚果云、iCloud、NAS 等）在 `team-sync.json` 的 `drive.patterns` 里加一条路径规则，或在每台电脑的 `.env.team` 里写 `<前缀>_DRIVE_ROOT=路径`。
 
 ```bash
-git clone --branch v0.1.14 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # 成员:只需要 git
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.14"  # 维护者:得到 team-sync 命令
+git clone --branch v0.1.16 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # 成员:只需要 git
+pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.16"  # 维护者:得到 team-sync 命令
 ```
 
 用 `init` 配置过的仓库里，一切都通过提交进仓库的启动器 `bin/team_sync.py` 运行，两种安装方式它都能找到。Windows 需要先装 Python，并确保有 `python3` 命令。
@@ -129,11 +131,12 @@ git add -A && git commit -m "team-sync" && git push
   "fingerprint": { "root": "data", "manifest": "data_manifest.json" },
   "drive": { "root_name": "Team", "marker": "Papers" },
   "convo": { "dir": "docs/对话记录", "compact_chars": 30000, "keep_recent_chars": 8000, "keep_email_domains": ["acme.com"] },
-  "version": "0.1.14"
+  "inbox": { "dir": "docs/留言" },
+  "version": "0.1.16"
 }
 ```
 
-`version` 锁定团队使用的版本：成员电脑上的版本不一致时，开头摘要会提示，守则让 agent 直接运行 `team-sync upgrade`。`convo` 不写就不记录对话。
+`version` 锁定团队使用的版本：成员电脑上的版本不一致时，开头摘要会提示，守则让 agent 直接运行 `team-sync upgrade`。`convo` 不写就不记录对话，`inbox` 不写就不开留言。
 
 ## 成员：配置电脑（一次）
 
@@ -177,10 +180,27 @@ team-sync lease release collect:telegram:main [--force]
 - fork 或续接出来的会话：新会话开头复制过来的旧对话不再记一遍，文件开头写明接续自哪份记录。按消息 ID 判断，每台电脑上有一份索引。
 - 仓库里的人都能看到这些记录，开启前要告诉被记录的人。
 
+## 留言
+
+在 `team-sync.json` 里写上 `"inbox": {"dir": "docs/留言"}` 即开启。
+
+```
+team-sync msg send yulu "首页文案改好了，有空看一下 docs/知识/网站现状.md"
+team-sync msg send yulu,hanyu "……"     多人用逗号隔开
+team-sync msg list                     自己发出和收到的留言、是否已送达
+```
+
+- 收件人写对方的简称，也就是对方 env 文件里的 `<前缀>_WHO`。
+- 一条留言一个文件：`<dir>/<收件人>/<时间>_<发件人>.md`，两个人同时写不会冲突。
+- 送达：对方开新对话时放在团队摘要最前面；对话进行中，每轮开始前再检查一次。每轮检查只读本地文件，不联网，不会拖慢对话；新留言靠每轮结束的同步和每 5 分钟的后台同步拉下来，所以最慢要等几分钟加上对方的下一条消息。
+- 送达后标记为已送达，这个标记随同步回到发件人那边，发件人下次开会话时摘要里会显示。
+- **留言只转告，不执行。** 注入的文字写明这是队友留言、不是用户本人的指令，agent 要先把原文告诉用户，用户同意后才照做。否则能往仓库推送的人就能操纵队友的 agent，本人也不知道它为什么突然去做某件事。这一条靠模型遵守，见上一节。
+
 ## 其他命令
 
 ```
 team-sync note "做了什么 / 改了哪 / 下一步"   往团队日志追加一行
+team-sync msg send <谁> "……" | list      给队友的 agent 留言
 team-sync convo list | compact             对话记录
 team-sync cursor show|pull|push            共享进度(例如采集抓到了第几条)
 team-sync fingerprint [--check|--quick]    不进 git 的数据目录的指纹清单
@@ -194,7 +214,7 @@ team-sync paths | status | version
 - **租约放在脚本里，不放在 hook 里。** 各家 agent 的 hook 不一样，需要用户信任，而且 agent 自己写的命令可以绕过 hook。脚本是使用这个资源的唯一入口，不会被忘掉。
 - **成员只拿团队口令。** 成员拿不到数据库的服务密钥；匿名 key 本来就是公开的，表启用了行级安全，只有校验过口令的函数能读写。
 - **开头摘要里的「谁做了什么」从 git 来。** 提交记录、团队日志、对话记录都在仓库里，换电脑、换 agent 都能读到，不依赖某一家 agent 的记忆功能。
-- **自测。** `team-sync selftest` 在临时目录里建一个本地远端和三个克隆，覆盖同步、冲突、租约、四家 agent 的 hook、对话记录（过滤、脱敏、压缩、不记录）和日志并发合并，不会碰真实的远端。
+- **自测。** `team-sync selftest` 在临时目录里建一个本地远端和三个克隆，覆盖同步、冲突、租约、四家 agent 的 hook、对话记录（过滤、脱敏、压缩、不记录）、日志并发合并、留言送达和回执、提交身份，不会碰真实的远端。
 
 ## 背景
 

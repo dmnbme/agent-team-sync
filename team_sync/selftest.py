@@ -214,6 +214,42 @@ def run(cfg, keep=False):
     check('session end: one line for the whole session, records left out', 'selftest_s1.md' in last and 'selftest_s2.md' in last
           and cdir not in last, last[-90:])
 
+    print('9 messages between agents (bob still holds the staged conflict from step 3, so carol receives)')
+    for who in (A, C):                                        # turn messages on in both clones if the real config has them off
+        c = json.loads((who / CONFIG_NAME).read_text(encoding='utf-8')) if (who / CONFIG_NAME).exists() else {}
+        if not (c.get('inbox') or {}).get('dir'):
+            c['inbox'] = {'dir': 'docs/inbox'}
+            (who / CONFIG_NAME).write_text(json.dumps(c, ensure_ascii=False, indent=2), encoding='utf-8')
+    ts(C, 'stop'); ts(A, 'stop')
+    out = ts(A, 'msg', 'send', 'carol', 'selftest 留言一')
+    check('send writes the message', '✓' in out, out[:80])
+    ts(A, 'stop')
+    out = ts(C, 'start')
+    check('recipient gets it at session start, framed as not from the user', 'selftest 留言一' in out and '📨' in out)
+    check('delivered once only', 'selftest 留言一' not in ts(C, 'start'))
+    ts(A, 'msg', 'send', 'carol', 'selftest 留言二'); ts(A, 'stop')
+    ts(C, 'stop')                                             # what autosync or a turn end does
+    raw = ts(C, 'hook', 'claude', 'prompt', stdin='{}')
+    try:
+        ctx = json.loads(raw).get('hookSpecificOutput', {}).get('additionalContext', '')
+    except ValueError:
+        ctx = ''
+    check('recipient gets it before the next turn (UserPromptSubmit)', 'selftest 留言二' in ctx, raw[:80])
+    check('nothing new: the turn hook returns {}', ts(C, 'hook', 'codex', 'prompt', stdin='{}') == '{}')
+    ts(C, 'stop')
+    out = ts(A, 'start')
+    check("sender's next summary shows the receipt", 'carol' in out and ('已送达' in out or 'delivered' in out))
+
+    print('10 commit identity from the GitHub login')
+    fake = tmp / 'fakebin'; fake.mkdir()
+    (fake / 'gh').write_text('#!/bin/sh\necho "selfuser 123"\n', encoding='utf-8'); (fake / 'gh').chmod(0o755)
+    sh(C, 'git', 'config', '--unset', 'user.email'); sh(C, 'git', 'config', '--unset', 'user.name')
+    noglobal = {'GIT_CONFIG_GLOBAL': str(tmp / 'no-global-gitconfig'), 'PATH': f"{fake}{os.pathsep}{os.environ.get('PATH', '')}"}
+    out = ts(C, 'start', env=noglobal)
+    email = sh(C, 'git', 'config', 'user.email', env=noglobal)
+    check('no e-mail configured: repo uses the GitHub login and noreply address', email == '123+selfuser@users.noreply.github.com'
+          and sh(C, 'git', 'config', 'user.name', env=noglobal) == 'selfuser', email)
+
     if keep:
         print(f'\nkept: {tmp}')
     else:

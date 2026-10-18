@@ -5,8 +5,8 @@
   team-sync stop --session-end   same, plus one journal line listing the files this person changed since the last such line
   team-sync note "what / where / next"
   team-sync hook antigravity pre_invocation|stop     stdin JSON → stdout JSON (Antigravity hook protocol)
-  team-sync hook codex session_start|stop            stdin JSON → stdout JSON (Codex hook protocol)
-  team-sync hook claude stop                         stdin JSON → stdout JSON (Claude Code Stop hook: conversation record)
+  team-sync hook codex session_start|prompt|stop     stdin JSON → stdout JSON (Codex hook protocol)
+  team-sync hook claude prompt|stop                  stdin JSON → stdout JSON (Claude Code: teammate messages; conversation record)
 
 All git operations on one machine (hooks, background autosync, manual) are serialised with a file lock.
 A pull conflict is never left half-merged: rebase is aborted, local work stays, a marker is written and shown next start.
@@ -16,7 +16,9 @@ import datetime as dt
 import io
 import json
 import os
+import pathlib
 import platform
+import shutil
 import subprocess
 import sys
 import time
@@ -162,6 +164,36 @@ def pull(cfg):
     return msg
 
 
+def ensure_identity(cfg):
+    """With no user.email configured, git signs commits with a guess (the OS full name, user@host.local) that GitHub links
+    to nobody: no username, no avatar. If gh is logged in, give this repo the GitHub login and its noreply address.
+    Tried at most once a day. Returns a line for the summary, or ''."""
+    if git(cfg, 'config', 'user.email').stdout.strip():
+        return ''
+    f = state(cfg, 'identity_tried')
+    today = dt.date.today().isoformat()
+    try:
+        if f.exists() and f.read_text(encoding='utf-8').strip() == today:
+            return ''
+        f.write_text(today, encoding='utf-8')
+    except OSError:
+        return ''
+    gh = shutil.which('gh') or next((str(p) for p in (pathlib.Path.home() / '.team-sync' / 'bin' / n for n in ('gh', 'gh.exe')) if p.exists()), None)
+    if not gh:
+        return ''
+    try:
+        r = subprocess.run([gh, 'api', 'user', '--jq', '.login + " " + (.id|tostring)'], capture_output=True, text=True, timeout=15)
+    except Exception:  # noqa: BLE001
+        return ''
+    parts = r.stdout.split()
+    if r.returncode != 0 or len(parts) != 2:
+        return ''
+    login, uid = parts
+    git(cfg, 'config', 'user.name', login)
+    git(cfg, 'config', 'user.email', f'{uid}+{login}@users.noreply.github.com')
+    return t(cfg.lang, 'identity_set', login=login)
+
+
 def start(cfg):
     if not is_repo(cfg):
         print(t(cfg.lang, 'not_repo')); return
@@ -175,6 +207,9 @@ def _start_body(cfg, pull_ok=True):
     ensure_hook(cfg)
     ensure_attrs(cfg)
     lines = [t(cfg.lang, 'header', holder=cfg.holder(), now=f'{dt.datetime.now():%Y-%m-%d %H:%M}')]
+    ident = ensure_identity(cfg)
+    if ident:
+        lines.append(ident)
     marker = state(cfg, 'conflict.txt')
     if marker.exists():
         lines.append(t(cfg.lang, 'conflict_pending') + '\n   ' + marker.read_text(encoding='utf-8').strip().replace('\n', '\n   '))
@@ -182,6 +217,10 @@ def _start_body(cfg, pull_ok=True):
     if wanted and wanted != __version__:
         lines.append(t(cfg.lang, 'version_mismatch', installed=__version__, wanted=wanted))
     lines.append(pull(cfg) if pull_ok else t(cfg.lang, 'not_pulled'))
+    from .inbox import deliver, receipts
+    inbox = deliver(cfg)                                        # first thing after the pull, so it is not lost in the summary
+    if inbox:
+        lines.insert(1, inbox)
     since_f = state(cfg, 'auto_since')                          # the next session-end journal line starts from here
     if not since_f.exists():
         head = git(cfg, 'rev-parse', 'HEAD').stdout.strip()
@@ -191,8 +230,15 @@ def _start_body(cfg, pull_ok=True):
     since = stamp.read_text(encoding='utf-8').strip() if stamp.exists() else (dt.date.today() - dt.timedelta(days=7)).isoformat()
     n = int(cfg.data['sync'].get('log_commits', 12))
     cdir = ((cfg.data.get('convo') or {}).get('dir') or '').strip('/')
-    only = ['--', '.', f':(exclude){cdir}'] if cdir else []        # commits that only touched conversation records are noise here
+    idir = ((cfg.data.get('inbox') or {}).get('dir') or '').strip('/')
+    only = ['--', '.'] + [f':(exclude){x}' for x in (cdir, idir) if x] if (cdir or idir) else []   # records and messages alone are noise here
     log = git(cfg, 'log', f'--since={since}', '--format=%h %ad %an: %s', '--date=short', f'-{n}', *only).stdout.strip()
+    try:
+        rc = receipts(cfg, since)
+        if rc:
+            lines.append(rc)
+    except Exception:  # noqa: BLE001
+        pass
     lines.append(t(cfg.lang, 'recent_commits', since=since[:10]) + '\n' + ('   ' + log.replace('\n', '\n   ') if log else '   ' + t(cfg.lang, 'none')))
     j = journal_path(cfg)
     if j.exists():
@@ -261,6 +307,7 @@ def _session_files(cfg, staged):
     """What this person changed since the last session-end line: their sync commits since then (autosync and turn-end
     pushes commit along the way), then what is staged now. Conversation records and the journal itself left out."""
     from .convo import is_record
+    from .inbox import is_message
     since_f = state(cfg, 'auto_since')
     since = since_f.read_text(encoding='utf-8').strip() if since_f.exists() else ''
     names = []
@@ -270,7 +317,7 @@ def _session_files(cfg, staged):
         names = [l.strip() for l in log.splitlines() if l.strip()]
     out = []
     for f in names + staged:
-        if f not in out and f != cfg.data['journal'] and not is_record(cfg, f):
+        if f not in out and f != cfg.data['journal'] and not is_record(cfg, f) and not is_message(cfg, f):
             out.append(f)
     return out
 
@@ -394,6 +441,11 @@ def hook(cfg, kind, event):
                 text = _capture(lambda: start(cfg))
                 if text:
                     out = {'injectSteps': [{'userMessage': t(cfg.lang, 'hook_inject_prefix') + text}]}
+            else:
+                from .inbox import deliver
+                text = deliver(cfg)
+                if text:
+                    out = {'injectSteps': [{'userMessage': text}]}
         elif kind == 'antigravity' and event == 'stop':
             if data.get('fullyIdle', True):
                 _capture(lambda: stop(cfg))
@@ -402,6 +454,13 @@ def hook(cfg, kind, event):
             text = _capture(lambda: start(cfg))
             if text:
                 out = {'hookSpecificOutput': {'hookEventName': 'SessionStart', 'additionalContext': t(cfg.lang, 'hook_inject_prefix') + text}}
+        elif kind in ('codex', 'claude') and event == 'prompt':
+            # UserPromptSubmit, before every turn: unread teammate messages only. A local read, no network, so it adds no
+            # wait; the turn-end sync and the background autosync are what bring new messages in.
+            from .inbox import deliver
+            text = deliver(cfg)
+            if text:
+                out = {'hookSpecificOutput': {'hookEventName': 'UserPromptSubmit', 'additionalContext': text}}
         elif kind == 'codex' and event == 'stop':
             # Stop fires when a turn ends. Write the conversation record, then push in a detached process so the user is
             # never held up. A compaction request continues the turn; the push then happens when that turn ends.

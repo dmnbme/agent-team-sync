@@ -17,6 +17,9 @@ def main(argv=None):
     n = sub.add_parser('note', help='append a line to the team journal'); n.add_argument('text', nargs='+')
     h = sub.add_parser('hook', help='agent hook adapters (stdin JSON → stdout JSON)'); h.add_argument('kind', choices=['antigravity', 'codex', 'claude']); h.add_argument('event')
     sub.add_parser('gate', help='secret gate (used by the pre-commit hook)')
+    m = sub.add_parser('msg', help="messages to teammates' agents"); ms = m.add_subparsers(dest='op', required=True)
+    x = ms.add_parser('send', help='leave a message; text as arguments or on stdin'); x.add_argument('to', help='short name(s), comma-separated'); x.add_argument('text', nargs='*')
+    ms.add_parser('list', help='messages you sent and received, with delivery state')
     cv = sub.add_parser('convo', help='conversation records'); cvs = cv.add_subparsers(dest='op', required=True)
     x = cvs.add_parser('compact', help='fold older messages into the summary (the turn-end hook asks the agent to run this); summary on stdin')
     x.add_argument('--file', required=True); x.add_argument('--through', required=True); x.add_argument('--summary-file')
@@ -73,6 +76,11 @@ def main(argv=None):
                 print(convo.recent(cfg, 20) or '(none)'); return 0
             text = open(ns.summary_file, encoding='utf-8').read() if ns.summary_file else sys.stdin.read()
             return convo.compact(cfg, ns.file, ns.through, text)
+        if ns.cmd == 'msg':
+            from . import inbox
+            if ns.op == 'list':
+                return inbox.list_cli(cfg)
+            return inbox.send(cfg, ns.to, ' '.join(ns.text) if ns.text else sys.stdin.read())
         if ns.cmd == 'gate':
             from .gate import run; return run(cfg)
         if ns.cmd == 'lease':

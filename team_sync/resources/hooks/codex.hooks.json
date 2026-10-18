@@ -1,5 +1,5 @@
 {
-  "description": "team-sync: team summary at session start; after each turn, the conversation record, then commit + pull + push in the background",
+  "description": "team-sync: team summary at session start; teammate messages before each turn; after each turn, the conversation record, then commit + pull + push in the background",
   "hooks": {
     "SessionStart": [
       {
@@ -12,6 +12,19 @@
             "timeout": 60,
             "statusMessage": "team-sync: pulling",
             "additionalContextLimit": 4000
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "r=$(git rev-parse --show-toplevel 2>/dev/null) && [ -f \"$r/bin/team_sync.py\" ] && python3 \"$r/bin/team_sync.py\" hook codex prompt || echo '{}'",
+            "commandWindows": "python3 -c \"import os,subprocess,sys;r=subprocess.run(['git','rev-parse','--show-toplevel'],capture_output=True,text=True).stdout.strip();p=os.path.join(r,'bin','team_sync.py');sys.exit(subprocess.call([sys.executable,p,'hook','codex','prompt']) if r and os.path.isfile(p) else print('{}'))\"",
+            "timeout": 15,
+            "statusMessage": "team-sync: messages"
           }
         ]
       }

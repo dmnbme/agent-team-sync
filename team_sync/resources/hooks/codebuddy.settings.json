@@ -12,6 +12,17 @@
         ]
       }
     ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "d=\"${CODEBUDDY_PROJECT_DIR:-.}\"; [ -f \"$d/bin/team_sync.py\" ] && python3 \"$d/bin/team_sync.py\" hook claude prompt || true",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
     "SessionEnd": [
       {
         "hooks": [
