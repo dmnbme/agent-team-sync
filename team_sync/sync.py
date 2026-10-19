@@ -133,9 +133,21 @@ def note(cfg, text, auto=False):
         f.write(f"- {dt.datetime.now():%Y-%m-%d %H:%M} · {cfg.who()} · {'auto · ' if auto else ''}{text.strip()}\n")
 
 
-NET_ERRORS = ('Could not resolve host', 'Failed to connect', 'Connection timed out', 'Operation timed out',
-              'Connection refused', 'Connection reset', 'Network is unreachable', 'Could not read from remote repository',
-              'SSL_ERROR', 'SSL_connect', 'gnutls_handshake', 'The requested URL returned error: 5', 'early EOF')
+# Signs of a flaky HTTP/2 path (some networks and proxies drop long HTTP/2 streams); HTTP/1.1 is the usual cure.
+HTTP2_TROUBLE = ('HTTP/2', 'RPC failed', 'curl 92', 'curl 56', 'curl 18', 'unexpected disconnect', 'Operation too slow', 'early EOF')
+
+
+def _net(cfg, *args):
+    """A git command that talks to the remote. On failure, retry once; when the error looks like a flaky HTTP/2 path, switch
+    this repo to HTTP/1.1 first (only if nobody set http.version)."""
+    r = git(cfg, *args)
+    if r.returncode == 0:
+        return r
+    err = r.stderr + r.stdout
+    if any(k in err for k in HTTP2_TROUBLE) and not git(cfg, 'config', 'http.version').stdout.strip():
+        git(cfg, 'config', 'http.version', 'HTTP/1.1')
+    time.sleep(2)
+    return git(cfg, *args)
 
 
 def pull(cfg):
@@ -143,16 +155,22 @@ def pull(cfg):
         return t(cfg.lang, 'no_origin')
     stashes = lambda: len(git(cfg, 'stash', 'list').stdout.splitlines())
     before = stashes()
-    r = git(cfg, 'pull', '--rebase', '--autostash', '--quiet')
     marker = state(cfg, 'conflict.txt')
+    # Fetch and rebase separately: a failed fetch is always the network, whatever git's wording, and is never a conflict.
+    if _net(cfg, 'fetch', '--quiet', 'origin').returncode != 0:
+        return t(cfg.lang, 'offline')
+    if git(cfg, 'rev-parse', '--abbrev-ref', '@{u}').returncode == 0:
+        r = git(cfg, 'rebase', '--autostash', '--quiet', '@{u}')
+    else:                                                       # no upstream set: let pull pick the branch
+        r = git(cfg, 'pull', '--rebase', '--autostash', '--quiet')
     if r.returncode == 0:
         if marker.exists():
             marker.unlink()
         return t(cfg.lang, 'pulled')
     out = (r.stderr or r.stdout).strip()
-    if any(k in out for k in NET_ERRORS):
-        # fetch never reached the remote: nothing was merged or stashed, so this is not a conflict
-        return t(cfg.lang, 'offline')
+    gd = cfg.repo / '.git'
+    if not (gd / 'rebase-merge').exists() and not (gd / 'rebase-apply').exists():
+        return '⚠ ' + out[:300]                                 # failed before any rebase started: nothing to undo, not a conflict
     git(cfg, 'rebase', '--abort')
     if stashes() > before:                                       # only pop an autostash git left behind, never an older stash
         git(cfg, 'stash', 'pop')
@@ -353,7 +371,7 @@ def _commit_push(cfg, staged):
         msg = pull(cfg)
         if msg.startswith('⚠'):
             print(msg); return
-        p = git(cfg, 'push', '--quiet')
+        p = _net(cfg, 'push', '--quiet')
         print(t(cfg.lang, 'pushed') if p.returncode == 0 else t(cfg.lang, 'push_failed', err=(p.stderr or p.stdout).strip()[:300]))
     if cfg.get('TEAM_KEY'):
         try:

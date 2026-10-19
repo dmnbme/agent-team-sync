@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.18 (2026-10-19)
+
+- Network failures are no longer reported as pull conflicts. Sync used to run `git pull --rebase` and tell the two apart by matching error text; errors missing from the list (an HTTP/2 stream reset, for one) raised a false "conflict" notification and marker. Now `git fetch` runs first: if it fails, that is the network, whatever the wording. The rebase onto the fetched branch runs locally, and only a failure there can be a conflict.
+- Fetch and push retry once. When the error points to a flaky HTTP/2 path (common through some networks and proxies), the repository switches to HTTP/1.1 first, unless `http.version` is already set.
+
 ## 0.1.17 (2026-10-19)
 
 - `msg send` pushes right away in the background, as its confirmation says, instead of waiting for the next turn-end sync or autosync run.

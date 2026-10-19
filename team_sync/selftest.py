@@ -240,6 +240,17 @@ def run(cfg, keep=False):
     out = ts(A, 'start')
     check("sender's next summary shows the receipt", 'carol' in out and ('已送达' in out or 'delivered' in out))
 
+    print('9b network failure is never reported as a conflict')
+    good = sh(C, 'git', 'remote', 'get-url', 'origin')
+    sh(C, 'git', 'remote', 'set-url', 'origin', str(tmp / 'no-such-remote.git'))
+    (C / jdir / 'selftest_offline.md').write_text('offline edit\n', encoding='utf-8')
+    out = ts(C, 'stop')
+    check('unreachable remote: offline notice, no conflict marker', ('offline' in out.lower() or '连不上' in out)
+          and not (C / '.git' / 'team-sync' / 'conflict.txt').exists(), out.replace('\n', ' | ')[:100])
+    sh(C, 'git', 'remote', 'set-url', 'origin', good)
+    out = ts(C, 'stop')
+    check('back online: the queued commit is pushed', 'Pushed' in out or '已推送' in out, out.replace('\n', ' | ')[:100])
+
     print('10 commit identity from the GitHub login')
     fake = tmp / 'fakebin'; fake.mkdir()
     (fake / 'gh').write_text('#!/bin/sh\necho "selfuser 123"\n', encoding='utf-8'); (fake / 'gh').chmod(0o755)

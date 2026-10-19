@@ -101,8 +101,8 @@ Good fit: teams of 3 to 10 people who already use coding agents and want to keep
 Requirements: git and Python 3.9 or later (the one that ships with macOS is enough). No third-party packages. The shared drive can be any service that syncs to a local folder: Google Drive, OneDrive and Dropbox are found automatically; for others (iCloud, Box, a NAS, Syncthing) add a path pattern under `drive.patterns` in `team-sync.json`, or set `<PREFIX>_DRIVE_ROOT=path` in each machine's `.env.team`.
 
 ```bash
-git clone --branch v0.1.17 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # members: git only
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.17"  # maintainers: gives the team-sync command
+git clone --branch v0.1.18 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # members: git only
+pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.18"  # maintainers: gives the team-sync command
 ```
 
 In a repository set up with `init`, everything runs through the committed launcher `bin/team_sync.py`, which finds the package either way. On Windows, install Python and make sure a `python3` command exists.
@@ -132,7 +132,7 @@ Main fields of `team-sync.json`:
   "drive": { "root_name": "Team", "marker": "Papers" },
   "convo": { "dir": "docs/conversations", "compact_chars": 30000, "keep_recent_chars": 8000, "keep_email_domains": ["acme.com"] },
   "inbox": { "dir": "docs/inbox" },
-  "version": "0.1.17"
+  "version": "0.1.18"
 }
 ```
 
