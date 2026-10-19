@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.19 (2026-10-19)
+
+- The conversation-record opt-out no longer fires on a question or a passing mention. Any user message containing 不记录这段对话 or `[no-record]` used to delete the session's record, so asking "if I say 不记录这段对话, is it not recorded?" deleted the record of the conversation in which it was asked. Now the message has to open with the phrase, or be a very short message ending with it, and must not read as a question.
+
 ## 0.1.18 (2026-10-19)
 
 - Network failures are no longer reported as pull conflicts. Sync used to run `git pull --rebase` and tell the two apart by matching error text; errors missing from the list (an HTTP/2 stream reset, for one) raised a false "conflict" notification and marker. Now `git fetch` runs first: if it fails, that is the network, whatever the wording. The rebase onto the fetched branch runs locally, and only a failure there can be a conflict.

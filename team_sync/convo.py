@@ -345,6 +345,24 @@ def _index(cfg):
     return idx
 
 
+ASKING = re.compile(r'[?？]|吗|怎么|怎样|如何|如果|假如|会不会|是不是|能不能|可不可以|what|how|does|will|\\bif\\b', re.I)
+
+
+def opts_out(text):
+    """True only when the message is the instruction itself (it opens the message, or ends a very short one), not a question
+    about it or a passing mention: asking how the switch works must not delete the record."""
+    s = re.sub(r'\s+', '', text)
+    for k in NO_RECORD:
+        k2 = k.replace(' ', '')
+        if k2 not in s.lower() if k2.startswith('[') else k2 not in s:
+            continue
+        if ASKING.search(text):
+            return False
+        if s.startswith(k2) or (s.endswith(k2) and len(s) - len(k2) <= 6):     # "不记录这段对话,…" / "这段请不记录这段对话"
+            return True
+    return False
+
+
 # ---------------------------------------------------------------- turn end (hook)
 def update(cfg, agent, data, idx=None):
     """Turn-end hook body. Returns None, or the text of a request asking the agent to compact the record."""
@@ -373,7 +391,7 @@ def update(cfg, agent, data, idx=None):
     if new and any(m[-1] for m in new):
         _save(_index_path(cfg), idx)
     new = own
-    if any(role == 'user' and any(k in text for k in NO_RECORD) for _, role, text in new):
+    if any(role == 'user' and opts_out(text) for _, role, text in new):
         st['off'] = True
     if st.get('off'):
         if st.get('file') and (cfg.repo / _dir(cfg) / st['file']).exists():

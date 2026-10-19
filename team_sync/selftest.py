@@ -178,6 +178,10 @@ def run(cfg, keep=False):
     jsonl(tr2, [cu('2026-01-04T00:00:00.000Z', '不记录这段对话。帮我看看这份私人文件'), ca('2026-01-04T00:00:05.000Z', tx('好的。'))])
     ts(A, 'hook', 'claude', 'stop', stdin=json.dumps({'session_id': 'norecord1', 'transcript_path': str(tr2)}))
     check('"不记录这段对话" leaves no record', not list((A / cdir).glob('*/*_norecord.md')))
+    tr3 = tmp / 'claude-askabout.jsonl'
+    jsonl(tr3, [cu('2026-01-04T01:00:00.000Z', '我说「不记录这段对话」就不会被记下来吗?'), ca('2026-01-04T01:00:05.000Z', tx('对,说了就不记。'))])
+    ts(A, 'hook', 'claude', 'stop', stdin=json.dumps({'session_id': 'askabout1', 'transcript_path': str(tr3)}))
+    check('asking about the switch does not turn recording off', bool(list((A / cdir).glob('*/*_askabou*.md'))))
     check('session start lists recent records', cdir + '/' in ts(A, 'start'))
 
     print('7b forked session: copied history is not recorded twice')
