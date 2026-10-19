@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.20 (2026-10-19)
+
+- Pausing the conversation record no longer deletes it. 不记录这段对话 / 暂停记录 / `[no-record]` now pauses from that message on: the earlier part stays, and the record marks where the pause began. 恢复记录 / `[record]` resumes from that message. 恢复记录并补上 / `[record-all]` resumes and adds the paused part, which was held in the local cache (never in the repository), to put a false trigger right.
+- While a session is paused, every turn shows the user a notice (`systemMessage` from the UserPromptSubmit hook, Claude Code and Codex), and the agent is told this turn is not recorded. The prompt that pauses or resumes gets its own notice.
+
 ## 0.1.19 (2026-10-19)
 
 - The conversation-record opt-out no longer fires on a question or a passing mention. Any user message containing 不记录这段对话 or `[no-record]` used to delete the session's record, so asking "if I say 不记录这段对话, is it not recorded?" deleted the record of the conversation in which it was asked. Now the message has to open with the phrase, or be a very short message ending with it, and must not read as a question.

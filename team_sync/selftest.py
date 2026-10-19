@@ -177,7 +177,30 @@ def run(cfg, keep=False):
     tr2 = tmp / 'claude-selftest-2.jsonl'
     jsonl(tr2, [cu('2026-01-04T00:00:00.000Z', '不记录这段对话。帮我看看这份私人文件'), ca('2026-01-04T00:00:05.000Z', tx('好的。'))])
     ts(A, 'hook', 'claude', 'stop', stdin=json.dumps({'session_id': 'norecord1', 'transcript_path': str(tr2)}))
-    check('"不记录这段对话" leaves no record', not list((A / cdir).glob('*/*_norecord.md')))
+    allrec = lambda: ''.join(f.read_text(encoding='utf-8') for f in (A / cdir).glob('*/*.md'))
+    check('"不记录这段对话": nothing from that message on is written', '私人文件' not in allrec() and '好的。' not in allrec())
+    # pause after two turns, chat while paused, resume; then the same with "恢复记录并补上" (a false trigger put right)
+    for sid, resume, held_back in (('pauseresume1', '恢复记录', False), ('pausefill1', '恢复记录并补上', True)):
+        tr = tmp / f'claude-{sid}.jsonl'
+        rows = [cu('2026-01-06T00:00:00.000Z', f'{sid} 公开问题'), ca('2026-01-06T00:00:05.000Z', tx(f'{sid} 公开回答')),
+                cu('2026-01-06T00:01:00.000Z', '暂停记录'), ca('2026-01-06T00:01:05.000Z', tx('好,这段不记。')),
+                cu('2026-01-06T00:02:00.000Z', f'{sid} 私下的问题'), ca('2026-01-06T00:02:05.000Z', tx(f'{sid} 私下的回答'))]
+        jsonl(tr, rows)
+        stdin = json.dumps({'session_id': sid, 'transcript_path': str(tr)})
+        ts(A, 'hook', 'claude', 'stop', stdin=stdin)
+        raw = ts(A, 'hook', 'claude', 'prompt', stdin=json.dumps({'session_id': sid, 'prompt': '再问一个'}))
+        check(f'{sid}: while paused, every turn tells the user', '⏸' in (json.loads(raw).get('systemMessage') or ''), raw[:80])
+        raw = ts(A, 'hook', 'claude', 'prompt', stdin=json.dumps({'session_id': sid, 'prompt': resume}))
+        check(f'{sid}: the resume prompt says so', '▶' in (json.loads(raw).get('systemMessage') or ''), raw[:80])
+        jsonl(tr, [cu('2026-01-06T00:03:00.000Z', resume), ca('2026-01-06T00:03:05.000Z', tx(f'{sid} 恢复以后的回答'))])
+        ts(A, 'hook', 'claude', 'stop', stdin=stdin)
+        rec = next(iter((A / cdir).glob(f'*/*_{sid[:8]}.md')), None)
+        body = rec.read_text(encoding='utf-8') if rec else ''
+        ok = f'{sid} 公开回答' in body and '⏸' in body and '▶' in body and f'{sid} 恢复以后的回答' in body
+        ok = ok and ((f'{sid} 私下的回答' in body) if held_back else (f'{sid} 私下的回答' not in body))
+        check(f'{sid}: record keeps the earlier part, marks pause and resume, ' + ('adds' if held_back else 'leaves out') + ' the paused part', ok, body[-120:].replace('\n', ' '))
+        raw = ts(A, 'hook', 'claude', 'prompt', stdin=json.dumps({'session_id': sid, 'prompt': '普通问题'}))
+        check(f'{sid}: after resuming, no notice', 'systemMessage' not in raw, raw[:80])
     tr3 = tmp / 'claude-askabout.jsonl'
     jsonl(tr3, [cu('2026-01-04T01:00:00.000Z', '我说「不记录这段对话」就不会被记下来吗?'), ca('2026-01-04T01:00:05.000Z', tx('对,说了就不记。'))])
     ts(A, 'hook', 'claude', 'stop', stdin=json.dumps({'session_id': 'askabout1', 'transcript_path': str(tr3)}))

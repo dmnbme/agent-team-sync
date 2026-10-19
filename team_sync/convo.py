@@ -21,9 +21,11 @@ from .gate import LINE_PAT
 from .msg import t
 
 AGENT_LABEL = {'claude': 'Claude Code', 'codex': 'Codex'}
-NO_RECORD = ('不记录这段对话', '不记录本次对话', '[no-record]')
+NO_RECORD = ('不记录这段对话', '不记录本次对话', '暂停记录', '[no-record]')        # pause: from this message on
+RESUME = ('恢复记录', '继续记录', '[record]')                                    # resume from this message on
+RESUME_FILL = ('恢复记录并补上', '补上刚才的记录', '[record-all]')                # resume, and add what was held back
 MARK = re.compile(r'<!-- team-sync-convo (\{.*?\}) -->')
-MSG_MARK = re.compile(r'^<!-- msg (\S+) (?:user|agent) -->$', re.M)
+MSG_MARK = re.compile(r'^<!-- msg (\S+) (?:user|agent|note) -->$', re.M)
 SUM_START, SUM_END = '<!-- summaries:start -->', '<!-- summaries:end -->'
 KEYVAL = re.compile(r'(?i)((?:password|passwd|secret|token|api[_-]?key|密码)\s*[:=：]\s*)(["\']?)[^\s"\'，。]{6,}')
 REMINDER = re.compile(r'<system-reminder>.*?</system-reminder>', re.S)
@@ -284,6 +286,9 @@ def _render(cfg, head, summaries, msgs, limit):
         iso, role, text = row[0], row[1], row[2]
         if through and iso <= through:
             continue
+        if role == 'note':                                        # pause / resume
+            out += [f'<!-- msg {iso} note -->', f'> {_local(iso)} · {text}', '']
+            continue
         out += [f'<!-- msg {iso} {role} -->', f"**{_local(iso)} · {head['who'] if role == 'user' else agent}**", '', text, '']
     return '\n'.join(out).rstrip('\n') + '\n'
 
@@ -345,22 +350,78 @@ def _index(cfg):
     return idx
 
 
-ASKING = re.compile(r'[?？]|吗|怎么|怎样|如何|如果|假如|会不会|是不是|能不能|可不可以|what|how|does|will|\\bif\\b', re.I)
+ASKING = re.compile(r'[?？]|吗|怎么|怎样|如何|如果|假如|会不会|是不是|能不能|可不可以|what|how|does|will|\bif\b', re.I)
 
 
-def opts_out(text):
-    """True only when the message is the instruction itself (it opens the message, or ends a very short one), not a question
-    about it or a passing mention: asking how the switch works must not delete the record."""
+def _is_cmd(text, phrases):
+    """True only when the message is the instruction itself (it opens the message, or ends a very short one), not a
+    question about it or a passing mention: asking how the switch works must not flip it."""
     s = re.sub(r'\s+', '', text)
-    for k in NO_RECORD:
+    for k in phrases:
         k2 = k.replace(' ', '')
-        if k2 not in s.lower() if k2.startswith('[') else k2 not in s:
+        if (k2 not in s.lower()) if k2.startswith('[') else (k2 not in s):
             continue
         if ASKING.search(text):
             return False
-        if s.startswith(k2) or (s.endswith(k2) and len(s) - len(k2) <= 6):     # "不记录这段对话,…" / "这段请不记录这段对话"
+        if s.lower().startswith(k2) or (s.endswith(k2) and len(s) - len(k2) <= 6):     # "不记录这段对话,…" / "这段请不记录这段对话"
             return True
     return False
+
+
+def command(text):
+    """'fill', 'on', 'off' or None for one user message."""
+    for name, phrases in (('fill', RESUME_FILL), ('on', RESUME), ('off', NO_RECORD)):
+        if _is_cmd(text, phrases):
+            return name
+    return None
+
+
+def opts_out(text):
+    return command(text) == 'off'
+
+
+def _apply(cfg, st, new):
+    """Add this turn's messages to the record, honouring pause / resume. While paused, messages are held in the local
+    cache only (never written to the repo), so "恢复记录并补上" can still add them after a false trigger."""
+    held = st.setdefault('held', [])
+    for iso, role, text in new:
+        cmd = command(text) if role == 'user' else None
+        if cmd == 'off' and not st.get('off'):
+            st['off'] = True
+            _append(st['msgs'], [(iso, 'note', t(cfg.lang, 'convo_paused_note'))])
+        elif cmd in ('on', 'fill') and st.get('off'):
+            st['off'] = False
+            if cmd == 'fill' and held:
+                paused = t(cfg.lang, 'convo_paused_note')
+                for row in reversed(st['msgs']):                 # the pause line no longer says "not recorded"
+                    if row[1] == 'note' and row[2] == paused:
+                        row[2] = t(cfg.lang, 'convo_paused_filled_note'); break
+                _append(st['msgs'], held)
+                _append(st['msgs'], [(iso, 'note', t(cfg.lang, 'convo_filled_note', n=len(held)))])
+            else:
+                _append(st['msgs'], [(iso, 'note', t(cfg.lang, 'convo_resumed_note'))])
+            st['held'] = held = []
+        if st.get('off'):
+            held.append([iso, role, text])
+        else:
+            _append(st['msgs'], [(iso, role, text)])
+
+
+def turn_notice(cfg, agent, data):
+    """Before a turn: (message for the user, context for the agent) when this session is paused or this prompt flips it;
+    (None, None) otherwise. Same rule as the turn-end hook, applied to the prompt about to be sent."""
+    if recording(cfg) is None or agent not in PARSERS:
+        return None, None
+    sid = re.sub(r'[^A-Za-z0-9_-]', '', str(data.get('session_id') or ''))
+    off = bool(_load(_cache(cfg, agent, sid)).get('off')) if sid else False
+    cmd = command(str(data.get('prompt') or ''))
+    if cmd == 'off' or (off and cmd not in ('on', 'fill')):
+        return t(cfg.lang, 'convo_turn_paused'), t(cfg.lang, 'convo_turn_paused_ctx')
+    if off and cmd == 'fill':
+        return t(cfg.lang, 'convo_turn_filled'), None
+    if off and cmd == 'on':
+        return t(cfg.lang, 'convo_turn_resumed'), None
+    return None, None
 
 
 # ---------------------------------------------------------------- turn end (hook)
@@ -391,15 +452,7 @@ def update(cfg, agent, data, idx=None):
     if new and any(m[-1] for m in new):
         _save(_index_path(cfg), idx)
     new = own
-    if any(role == 'user' and opts_out(text) for _, role, text in new):
-        st['off'] = True
-    if st.get('off'):
-        if st.get('file') and (cfg.repo / _dir(cfg) / st['file']).exists():
-            (cfg.repo / _dir(cfg) / st['file']).unlink()
-        st['msgs'] = []
-        _save(cf, st)
-        return None
-    _append(st['msgs'], new)
+    _apply(cfg, st, new)
     msgs = st['msgs']
     if not msgs:
         if st.get('file') and (cfg.repo / _dir(cfg) / st['file']).exists():     # everything in it was a copy
@@ -421,7 +474,7 @@ def update(cfg, agent, data, idx=None):
     limit, keep = int(c.get('compact_chars') or 30000), int(c.get('keep_recent_chars') or 8000)
     shown = msgs
     tail = data.get('last_assistant_message')                     # Codex passes the final message; use it if not on disk yet
-    if isinstance(tail, str) and tail.strip():
+    if isinstance(tail, str) and tail.strip() and not st.get('off'):
         tail = redact(cfg, tail.strip())
         if not any(m[1] == 'agent' and tail[-200:] in m[2] for m in msgs[-3:]):
             now = dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z')

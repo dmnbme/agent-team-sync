@@ -475,10 +475,15 @@ def hook(cfg, kind, event):
         elif kind in ('codex', 'claude') and event == 'prompt':
             # UserPromptSubmit, before every turn: unread teammate messages only. A local read, no network, so it adds no
             # wait; the turn-end sync and the background autosync are what bring new messages in.
+            # Also: when the conversation record is paused (or this prompt pauses or resumes it), say so to the user every turn.
             from .inbox import deliver
-            text = deliver(cfg)
-            if text:
-                out = {'hookSpecificOutput': {'hookEventName': 'UserPromptSubmit', 'additionalContext': text}}
+            from .convo import turn_notice
+            note, nctx = turn_notice(cfg, kind, data)
+            ctx = '\n\n'.join(x for x in (deliver(cfg), nctx) if x)
+            if ctx:
+                out['hookSpecificOutput'] = {'hookEventName': 'UserPromptSubmit', 'additionalContext': ctx}
+            if note:
+                out['systemMessage'] = note
         elif kind == 'codex' and event == 'stop':
             # Stop fires when a turn ends. Write the conversation record, then push in a detached process so the user is
             # never held up. A compaction request continues the turn; the push then happens when that turn ends.
