@@ -208,6 +208,17 @@ def run(cfg, keep=False):
     jsonl(tr3, [cu('2026-01-04T01:00:00.000Z', '我说「不记录这段对话」就不会被记下来吗?'), ca('2026-01-04T01:00:05.000Z', tx('对,说了就不记。'))])
     ts(A, 'hook', 'claude', 'stop', stdin=json.dumps({'session_id': 'askabout1', 'transcript_path': str(tr3)}))
     check('asking about the switch does not turn recording off', bool(list((A / cdir).glob('*/*_askabou*.md'))))
+    trm = tmp / 'claude-months.jsonl'
+    jsonl(trm, [cu('2026-01-15T03:00:00.000Z', '一月的问题'), ca('2026-01-15T03:00:05.000Z', tx('一月的回答'))])
+    mstdin = json.dumps({'session_id': 'monthroll1', 'transcript_path': str(trm)})
+    ts(A, 'hook', 'claude', 'stop', stdin=mstdin)
+    jsonl(trm, [cu('2026-02-15T03:00:00.000Z', '二月接着问'), ca('2026-02-15T03:00:05.000Z', tx('二月的回答'))])
+    ts(A, 'hook', 'claude', 'stop', stdin=mstdin)
+    jan = next(iter((A / cdir).glob('2026-01/*_monthrol.md')), None); feb = next(iter((A / cdir).glob('2026-02/*_monthrol.md')), None)
+    jt = jan.read_text(encoding='utf-8') if jan else ''; ft = feb.read_text(encoding='utf-8') if feb else ''
+    check('a session that runs into a new month goes on in a new file, linked both ways',
+          '一月的回答' in jt and '二月' not in jt.split('## ')[-1] and '二月的回答' in ft and '一月的回答' not in ft
+          and (feb.name if feb else '?') in jt and (jan.name if jan else '?') in ft, f'{jan} {feb}')
     pushed = sh(tmp, 'git', '--git-dir', 'origin.git', '-c', 'core.quotePath=false', 'log', '--name-only', '--format=', '-20')
     check('Claude Code turn end: the record is pushed right away', '_claude_askabou' in pushed)
     check('session start lists recent records', cdir + '/' in ts(A, 'start'))

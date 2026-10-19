@@ -278,6 +278,10 @@ def _render(cfg, head, summaries, msgs, limit):
            t(L, 'convo_intro', limit=limit, tz=_tz(head.get('last') or '') or '?')]
     if head.get('parent'):
         out.append(t(L, 'convo_parent', file=head['parent']))
+    if head.get('prev'):
+        out.append(t(L, 'convo_prev_month', file=head['prev']))
+    if head.get('next'):
+        out.append(t(L, 'convo_next_month', file=head['next']))
     if head.get('title'):
         out.append(t(L, 'convo_opening', title=head['title']))
     out += ['', t(L, 'convo_summaries'), SUM_START, summaries.strip() or t(L, 'convo_none'), SUM_END, '',
@@ -345,7 +349,7 @@ def _index(cfg):
     _save(ip, idx)
     for _, cp, st in sessions:                                    # re-render every record so the copies drop out
         agent, sid = cp.stem.split('_', 1)
-        _save(cp, {'path': st['path'], 'offset': 0, 'msgs': [], 'file': st.get('file'), 'off': st.get('off')})
+        _save(cp, {'path': st['path'], 'offset': 0, 'msgs': [], 'file': st.get('file'), 'off': st.get('off'), 'prev_file': st.get('prev_file')})
         update(cfg, agent, {'session_id': sid, 'transcript_path': st['path'], 'no_ask': True}, idx)
     return idx
 
@@ -426,6 +430,19 @@ def turn_notice(cfg, agent, data):
 
 
 # ---------------------------------------------------------------- turn end (hook)
+def _head(cfg, agent, sid, st, msgs, prev):
+    first_user = next((m[2] for m in msgs if m[1] == 'user'), '')
+    head = {'session': sid, 'agent': agent, 'who': cfg.who(), 'title': re.sub(r'\s+', ' ', first_user)[:60] or prev.get('title', ''),
+            'start': msgs[0][0], 'last': msgs[-1][3], 'through': prev.get('through') or ''}
+    if st.get('parent'):
+        pf = _load(cfg.state_dir / 'convo' / f"{st['parent']}.json").get('file')
+        if pf:
+            head['parent'] = f"{_dir(cfg)}/{pf}"
+    if st.get('prev_file'):
+        head['prev'] = f"{_dir(cfg)}/{st['prev_file']}"
+    return head
+
+
 def update(cfg, agent, data, idx=None):
     """Turn-end hook body. Returns None, or the text of a request asking the agent to compact the record."""
     c = recording(cfg)
@@ -462,17 +479,26 @@ def update(cfg, agent, data, idx=None):
         return None
     if not st.get('file'):
         st['file'] = _name(cfg, agent, sid, msgs[0][0])
+    limit, keep = int(c.get('compact_chars') or 30000), int(c.get('keep_recent_chars') or 8000)
+    # One file per session per month: when a session runs into a new month, this month's file is closed (with a link
+    # forward) and the session goes on in a file under the new month's folder (with a link back).
+    if st.get('prev_file') and msgs and _local(msgs[0][0], '%Y-%m-%d')[:7] < st['file'][:7]:   # re-read from the start (index rebuild)
+        st['msgs'] = msgs = [m for m in msgs if _local(m[0], '%Y-%m-%d')[:7] >= st['file'][:7]] or msgs[-1:]
+    cut = next((i for i, m in enumerate(msgs) if _local(m[0], '%Y-%m-%d')[:7] > st['file'][:7]), None)
+    if cut is not None:
+        nxt = _name(cfg, agent, sid, msgs[cut][0])
+        if cut > 0:
+            opath = cfg.repo / _dir(cfg) / st['file']
+            otext = opath.read_text(encoding='utf-8') if opath.exists() else ''
+            ohead = _head(cfg, agent, sid, st, msgs[:cut], _head_of(otext))
+            ohead['next'] = f"{_dir(cfg)}/{nxt}"
+            _write(cfg, opath, _render(cfg, ohead, _summaries_of(otext), msgs[:cut], limit))
+        st['prev_file'], st['file'] = st['file'], nxt
+        st['msgs'] = msgs = msgs[cut:]
+        st.pop('asked', None); st['asks'] = 0
     path = cfg.repo / _dir(cfg) / st['file']
     old = path.read_text(encoding='utf-8') if path.exists() else ''
-    prev = _head_of(old)
-    first_user = next((m[2] for m in msgs if m[1] == 'user'), '')
-    head = {'session': sid, 'agent': agent, 'who': cfg.who(), 'title': re.sub(r'\s+', ' ', first_user)[:60] or prev.get('title', ''),
-            'start': msgs[0][0], 'last': msgs[-1][3], 'through': prev.get('through') or ''}
-    if st.get('parent'):
-        pf = _load(cfg.state_dir / 'convo' / f"{st['parent']}.json").get('file')
-        if pf:
-            head['parent'] = f"{_dir(cfg)}/{pf}"
-    limit, keep = int(c.get('compact_chars') or 30000), int(c.get('keep_recent_chars') or 8000)
+    head = _head(cfg, agent, sid, st, msgs, _head_of(old))
     shown = msgs
     tail = data.get('last_assistant_message')                     # Codex passes the final message; use it if not on disk yet
     if isinstance(tail, str) and tail.strip() and not st.get('off'):

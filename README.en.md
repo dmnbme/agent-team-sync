@@ -101,8 +101,8 @@ Good fit: teams of 3 to 10 people who already use coding agents and want to keep
 Requirements: git and Python 3.9 or later (the one that ships with macOS is enough). No third-party packages. The shared drive can be any service that syncs to a local folder: Google Drive, OneDrive and Dropbox are found automatically; for others (iCloud, Box, a NAS, Syncthing) add a path pattern under `drive.patterns` in `team-sync.json`, or set `<PREFIX>_DRIVE_ROOT=path` in each machine's `.env.team`.
 
 ```bash
-git clone --branch v0.1.22 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # members: git only
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.22"  # maintainers: gives the team-sync command
+git clone --branch v0.1.23 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # members: git only
+pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.23"  # maintainers: gives the team-sync command
 ```
 
 In a repository set up with `init`, everything runs through the committed launcher `bin/team_sync.py`, which finds the package either way. On Windows, install Python and make sure a `python3` command exists.
@@ -132,7 +132,7 @@ Main fields of `team-sync.json`:
   "drive": { "root_name": "Team", "marker": "Papers" },
   "convo": { "dir": "docs/conversations", "compact_chars": 30000, "keep_recent_chars": 8000, "keep_email_domains": ["acme.com"] },
   "inbox": { "dir": "docs/inbox" },
-  "version": "0.1.22"
+  "version": "0.1.23"
 }
 ```
 
@@ -171,7 +171,7 @@ Leases are per resource, not per person. The holder id is `person@machine:proces
 
 ## Conversation records
 
-Add `"convo": {"dir": "docs/conversations"}` to `team-sync.json` to turn them on. One file per session: `<dir>/YYYY-MM/<date>_<who>_<agent>_<session>.md`.
+Add `"convo": {"dir": "docs/conversations"}` to `team-sync.json` to turn them on. One file per session per month: `<dir>/YYYY-MM/<date>_<who>_<agent>_<session>.md`, where the date is the session's first message in that month and the session part is the first 8 characters of the agent's session ID. When a session runs into a new month, it goes on in a file under the new month's folder; the two files link to each other, and the old one is no longer changed. Each month's folder holds what was actually said that month, and no file grows without limit.
 
 - Left out: tool calls, tool output, thinking, injected context. Kept: what both sides said, and the user's answers to multiple-choice questions.
 - Redaction: credential-shaped strings become `[redacted]`; e-mail addresses become `[email]`, except for domains listed in `keep_email_domains`.

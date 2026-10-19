@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.23 (2026-10-20)
+
+- One conversation record per session per month. A session that runs into a new month goes on in a new file under that month's folder, named after its first message there; the previous month's file gets a link forward and is no longer changed, the new one a link back. Before, a session kept its first file forever, so a long-lived session wrote months of conversation into the folder of the month it began, and its summaries grew without limit.
+
 ## 0.1.22 (2026-10-20)
 
 - Claude Code pushes after every turn, like Codex: the turn-end hook writes the conversation record, then runs commit, pull and push in a detached process, so the user does not wait. Before, Claude Code pushed only at session end and through the 5-minute autosync, so teammates could be up to 5 minutes behind. The session-end journal line is unchanged.

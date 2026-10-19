@@ -101,8 +101,8 @@ Codex 第一次打开项目时，要信任这个文件夹，再在「设置 → 
 依赖只有 git 和 Python 3.9 以上（macOS 自带的就够），不用安装任何第三方库。共享盘可以是任何会同步成本地文件夹的服务：Google Drive、OneDrive、Dropbox 能自动找到，其他的（坚果云、iCloud、NAS 等）在 `team-sync.json` 的 `drive.patterns` 里加一条路径规则，或在每台电脑的 `.env.team` 里写 `<前缀>_DRIVE_ROOT=路径`。
 
 ```bash
-git clone --branch v0.1.22 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # 成员:只需要 git
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.22"  # 维护者:得到 team-sync 命令
+git clone --branch v0.1.23 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # 成员:只需要 git
+pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.23"  # 维护者:得到 team-sync 命令
 ```
 
 用 `init` 配置过的仓库里，一切都通过提交进仓库的启动器 `bin/team_sync.py` 运行，两种安装方式它都能找到。Windows 需要先装 Python，并确保有 `python3` 命令。
@@ -132,7 +132,7 @@ git add -A && git commit -m "team-sync" && git push
   "drive": { "root_name": "Team", "marker": "Papers" },
   "convo": { "dir": "docs/对话记录", "compact_chars": 30000, "keep_recent_chars": 8000, "keep_email_domains": ["acme.com"] },
   "inbox": { "dir": "docs/留言" },
-  "version": "0.1.22"
+  "version": "0.1.23"
 }
 ```
 
@@ -171,7 +171,7 @@ team-sync lease release collect:telegram:main [--force]
 
 ## 对话记录
 
-在 `team-sync.json` 里写上 `"convo": {"dir": "docs/对话记录"}` 即开启。每个会话一个文件：`<dir>/年-月/<日期>_<谁>_<agent>_<会话号>.md`。
+在 `team-sync.json` 里写上 `"convo": {"dir": "docs/对话记录"}` 即开启。每个会话每个月一个文件：`<dir>/年-月/<日期>_<谁>_<agent>_<会话号>.md`，日期是这个会话在这个月的第一条消息的日期，会话号是 agent 会话 ID 的前 8 位。会话跨到新的一个月时，在新月份的文件夹里接着记，两份文件开头互相链接，旧文件不再改动；这样每个月文件夹里就是那个月实际聊过的内容，单个文件也不会无限变长。
 
 - 不记：工具调用、工具输出、思考过程、注入的上下文。记：双方说的话，以及用户在选择题里点的答案。
 - 脱敏：密钥形状的字符串换成 `[redacted]`；邮箱地址换成 `[email]`，`keep_email_domains` 里列出的域名除外。
