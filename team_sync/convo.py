@@ -416,11 +416,12 @@ def turn_notice(cfg, agent, data):
     off = bool(_load(_cache(cfg, agent, sid)).get('off')) if sid else False
     cmd = command(str(data.get('prompt') or ''))
     if cmd == 'off' or (off and cmd not in ('on', 'fill')):
-        return t(cfg.lang, 'convo_turn_paused'), t(cfg.lang, 'convo_turn_paused_ctx')
+        # Agent UIs hide or fold hook notices (Codex shows none, Claude Code folds it), so the agent also opens its reply with it
+        return t(cfg.lang, 'convo_turn_paused'), t(cfg.lang, 'convo_turn_paused_ctx') + '\n' + t(cfg.lang, 'convo_first_line', line=t(cfg.lang, 'convo_turn_paused'))
     if off and cmd == 'fill':
-        return t(cfg.lang, 'convo_turn_filled'), None
+        return t(cfg.lang, 'convo_turn_filled'), t(cfg.lang, 'convo_first_line', line=t(cfg.lang, 'convo_turn_filled'))
     if off and cmd == 'on':
-        return t(cfg.lang, 'convo_turn_resumed'), None
+        return t(cfg.lang, 'convo_turn_resumed'), t(cfg.lang, 'convo_first_line', line=t(cfg.lang, 'convo_turn_resumed'))
     return None, None
 
 

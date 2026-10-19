@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.21 (2026-10-19)
+
+- The paused-recording notice also goes into the agent's context with a request to open its reply with that line. The Codex desktop app does not display `systemMessage` from UserPromptSubmit hooks, and Claude Code folds it under a notice, so the UI notice alone was easy to miss. Resuming gets the same treatment.
+
 ## 0.1.20 (2026-10-19)
 
 - Pausing the conversation record no longer deletes it. 不记录这段对话 / 暂停记录 / `[no-record]` now pauses from that message on: the earlier part stays, and the record marks where the pause began. 恢复记录 / `[record]` resumes from that message. 恢复记录并补上 / `[record-all]` resumes and adds the paused part, which was held in the local cache (never in the repository), to put a false trigger right.

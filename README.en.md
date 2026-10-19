@@ -101,8 +101,8 @@ Good fit: teams of 3 to 10 people who already use coding agents and want to keep
 Requirements: git and Python 3.9 or later (the one that ships with macOS is enough). No third-party packages. The shared drive can be any service that syncs to a local folder: Google Drive, OneDrive and Dropbox are found automatically; for others (iCloud, Box, a NAS, Syncthing) add a path pattern under `drive.patterns` in `team-sync.json`, or set `<PREFIX>_DRIVE_ROOT=path` in each machine's `.env.team`.
 
 ```bash
-git clone --branch v0.1.20 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # members: git only
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.20"  # maintainers: gives the team-sync command
+git clone --branch v0.1.21 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # members: git only
+pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.21"  # maintainers: gives the team-sync command
 ```
 
 In a repository set up with `init`, everything runs through the committed launcher `bin/team_sync.py`, which finds the package either way. On Windows, install Python and make sure a `python3` command exists.
@@ -132,7 +132,7 @@ Main fields of `team-sync.json`:
   "drive": { "root_name": "Team", "marker": "Papers" },
   "convo": { "dir": "docs/conversations", "compact_chars": 30000, "keep_recent_chars": 8000, "keep_email_domains": ["acme.com"] },
   "inbox": { "dir": "docs/inbox" },
-  "version": "0.1.20"
+  "version": "0.1.21"
 }
 ```
 
@@ -176,7 +176,7 @@ Add `"convo": {"dir": "docs/conversations"}` to `team-sync.json` to turn them on
 - Left out: tool calls, tool output, thinking, injected context. Kept: what both sides said, and the user's answers to multiple-choice questions.
 - Redaction: credential-shaped strings become `[redacted]`; e-mail addresses become `[email]`, except for domains listed in `keep_email_domains`.
 - Compaction: when the verbatim part passes `compact_chars`, the hook asks the running agent at the end of that turn to write a summary and run `team-sync convo compact`. The newest `keep_recent_chars` stay verbatim.
-- Pause and resume: when the user says `[no-record]` (or 不记录这段对话 / 暂停记录), nothing from that message on is written; the earlier part stays, and the record shows a "⏸ paused" line. `[record]` (恢复记录) resumes from that message; `[record-all]` (恢复记录并补上) also adds the paused part, for a false trigger. The paused part is kept only in the local cache, never in the repository. While paused, every turn shows the user a notice that the conversation is not being recorded. These have to be said on their own or at the start of a message; asking about them or mentioning them does not count. `TEAM_SYNC_NO_CONVO=1`, or `<PREFIX>_CONVO=off` in the env file, turns recording off on one machine.
+- Pause and resume: when the user says `[no-record]` (or 不记录这段对话 / 暂停记录), nothing from that message on is written; the earlier part stays, and the record shows a "⏸ paused" line. `[record]` (恢复记录) resumes from that message; `[record-all]` (恢复记录并补上) also adds the paused part, for a false trigger. The paused part is kept only in the local cache, never in the repository. While paused, every turn tells the user the conversation is not being recorded: the hook sends a UI notice and asks the agent to open its reply with the same line (the Codex desktop app does not show hook notices, and Claude Code folds them). These have to be said on their own or at the start of a message; asking about them or mentioning them does not count. `TEAM_SYNC_NO_CONVO=1`, or `<PREFIX>_CONVO=off` in the env file, turns recording off on one machine.
 - Forked or continued sessions: the earlier conversation copied into the new session is not recorded again; the file starts with a link to the record it continues. This is decided by message id, with an index on each machine.
 - Everyone with access to the repository can read the records. Tell the people whose conversations are recorded before turning this on.
 
