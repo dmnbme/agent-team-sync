@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.22 (2026-10-20)
+
+- Claude Code pushes after every turn, like Codex: the turn-end hook writes the conversation record, then runs commit, pull and push in a detached process, so the user does not wait. Before, Claude Code pushed only at session end and through the 5-minute autosync, so teammates could be up to 5 minutes behind. The session-end journal line is unchanged.
+
 ## 0.1.21 (2026-10-19)
 
 - The paused-recording notice also goes into the agent's context with a request to open its reply with that line. The Codex desktop app does not display `systemMessage` from UserPromptSubmit hooks, and Claude Code folds it under a notice, so the UI notice alone was easy to miss. Resuming gets the same treatment.

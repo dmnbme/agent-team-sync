@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-team-sync"
-version = "0.1.21"
+version = "0.1.22"
 description = "Lets a small team, each person using their own AI coding agent (Claude Code, Codex, Antigravity, WorkBuddy), share one repository and one body of team context: session summaries, auto sync, conversation records, leases, a secret gate."
 readme = "README.md"
 license = { text = "MIT" }

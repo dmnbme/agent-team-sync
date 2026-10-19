@@ -6,7 +6,7 @@
   team-sync note "what / where / next"
   team-sync hook antigravity pre_invocation|stop     stdin JSON → stdout JSON (Antigravity hook protocol)
   team-sync hook codex session_start|prompt|stop     stdin JSON → stdout JSON (Codex hook protocol)
-  team-sync hook claude prompt|stop                  stdin JSON → stdout JSON (Claude Code: teammate messages; conversation record)
+  team-sync hook claude prompt|stop                  stdin JSON → stdout JSON (Claude Code: teammate messages; record + background push)
 
 All git operations on one machine (hooks, background autosync, manual) are serialised with a file lock.
 A pull conflict is never left half-merged: rebase is aborted, local work stays, a marker is written and shown next start.
@@ -494,10 +494,13 @@ def hook(cfg, kind, event):
             else:
                 _stop_in_background(cfg)
         elif kind == 'claude' and event == 'stop':
-            # Claude Code pushes at SessionEnd and through autosync; at each turn end only the conversation record is written.
+            # Same as Codex: write the record, then commit + pull + push in a detached process so teammates see this turn at
+            # once. SessionEnd still runs `stop --session-end` for the one journal line per session.
             ask = _convo(cfg, 'claude', data)
             if ask:
                 out = {'decision': 'block', 'reason': ask}
+            else:
+                _stop_in_background(cfg)
     except Exception:
         out = {}
     sys.stdout.write(json.dumps(out, ensure_ascii=False))

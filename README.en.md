@@ -54,7 +54,7 @@ Rules: see AGENTS.md. Take a lease through the scripts before touching shared re
 
 | agent | hook file | what runs |
 |---|---|---|
-| Claude Code | `.claude/settings.json` | session start: summary; before each turn: new messages; after each turn: conversation record; session end: commit, push and one journal line |
+| Claude Code | `.claude/settings.json` | session start: summary; before each turn: new messages; after each turn: conversation record, then commit and push in the background; session end: one journal line |
 | Codex | `.codex/hooks.json` | session start: summary; before each turn: new messages; after each turn: conversation record, then commit and push in the background. Scripted `codex exec` runs are skipped |
 | Antigravity | `.agents/hooks.json` | summary once per conversation; new messages on later calls; commit and push when idle |
 | WorkBuddy / CodeBuddy | `.codebuddy/settings.json` | session start: summary; before each turn: new messages; session end: commit and push |
@@ -101,8 +101,8 @@ Good fit: teams of 3 to 10 people who already use coding agents and want to keep
 Requirements: git and Python 3.9 or later (the one that ships with macOS is enough). No third-party packages. The shared drive can be any service that syncs to a local folder: Google Drive, OneDrive and Dropbox are found automatically; for others (iCloud, Box, a NAS, Syncthing) add a path pattern under `drive.patterns` in `team-sync.json`, or set `<PREFIX>_DRIVE_ROOT=path` in each machine's `.env.team`.
 
 ```bash
-git clone --branch v0.1.21 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # members: git only
-pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.21"  # maintainers: gives the team-sync command
+git clone --branch v0.1.22 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # members: git only
+pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.22"  # maintainers: gives the team-sync command
 ```
 
 In a repository set up with `init`, everything runs through the committed launcher `bin/team_sync.py`, which finds the package either way. On Windows, install Python and make sure a `python3` command exists.
@@ -132,7 +132,7 @@ Main fields of `team-sync.json`:
   "drive": { "root_name": "Team", "marker": "Papers" },
   "convo": { "dir": "docs/conversations", "compact_chars": 30000, "keep_recent_chars": 8000, "keep_email_domains": ["acme.com"] },
   "inbox": { "dir": "docs/inbox" },
-  "version": "0.1.21"
+  "version": "0.1.22"
 }
 ```
 

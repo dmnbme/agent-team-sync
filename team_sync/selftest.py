@@ -24,6 +24,7 @@ import os
 
 CLEAN_ENV = {k: v for k, v in os.environ.items() if k not in ('TEAM_SYNC_REPO', 'CLAUDE_PROJECT_DIR', 'CODEBUDDY_PROJECT_DIR')}
 CLEAN_ENV['TEAM_SYNC_NO_NOTIFY'] = '1'          # the staged conflict in step 3 must not pop up on the desktop
+CLEAN_ENV['TEAM_SYNC_FOREGROUND'] = '1'        # turn-end hooks push in the foreground: no detached processes racing the checks
 
 
 def sh(cwd, *args, stdin=None, env=None):
@@ -207,6 +208,8 @@ def run(cfg, keep=False):
     jsonl(tr3, [cu('2026-01-04T01:00:00.000Z', '我说「不记录这段对话」就不会被记下来吗?'), ca('2026-01-04T01:00:05.000Z', tx('对,说了就不记。'))])
     ts(A, 'hook', 'claude', 'stop', stdin=json.dumps({'session_id': 'askabout1', 'transcript_path': str(tr3)}))
     check('asking about the switch does not turn recording off', bool(list((A / cdir).glob('*/*_askabou*.md'))))
+    pushed = sh(tmp, 'git', '--git-dir', 'origin.git', '-c', 'core.quotePath=false', 'log', '--name-only', '--format=', '-20')
+    check('Claude Code turn end: the record is pushed right away', '_claude_askabou' in pushed)
     check('session start lists recent records', cdir + '/' in ts(A, 'start'))
 
     print('7b forked session: copied history is not recorded twice')
