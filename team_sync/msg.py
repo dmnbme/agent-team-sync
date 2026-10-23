@@ -55,20 +55,20 @@ _T = {
         'autosync_unsupported': 'autosync: no scheduler backend for {os}',
         'upgraded': '✓ Installed team-sync {version}',
         'convo_title': '# Conversation · {who} · {agent} · started {date}',
-        'convo_intro': '> Written by team-sync at the end of every turn: only what the two sides said, no tool calls or tool output; credential-shaped strings are replaced with [redacted]. When the verbatim part passes {limit} characters, the agent folds the older part into the summary. Times are the local time of the machine that wrote the file ({tz}).',
+        'convo_intro': '> Written by team-sync at the end of every turn: only what the two sides said, no tool calls or tool output; credential-shaped strings are replaced with [redacted]. Every {limit} characters of new text, the agent adds a summary of the older part at the top; the verbatim text is kept. Times are the local time of the machine that wrote the file ({tz}).',
         'convo_opening': '> Opening message: {title}',
         'convo_parent': '> Continues {file} (forked or continued from that session); the earlier conversation is in that record and is not repeated here.',
         'convo_prev_month': '> Same session, earlier months: {file} (one file per month).',
         'convo_next_month': '> This session goes on in {file} (one file per month).',
-        'convo_summaries': '## Summary (earlier part)',
+        'convo_summaries': '## Summary',
         'convo_none': '(none yet)',
         'convo_raw': '## Verbatim',
         'convo_raw_since': '## Verbatim (after {since})',
         'convo_range': '### {a} to {b}',
         'convo_compact_ask': (
-            "[team-sync hook, not the user speaking] The verbatim part of this session's conversation record {file} is {n} characters, "
-            "over the {limit} limit. Fold the older part into a summary and leave the rest verbatim:\n"
-            "1. Read the file. Fold the messages under \"## Verbatim\" from the first one ({since}) up to and including `<!-- msg {through} …-->`, about {chars} characters.\n"
+            "[team-sync hook, not the user speaking] The verbatim part of this session's conversation record {file} has {n} characters not yet summarized, "
+            "over {limit}. Write a summary of the older part (the summary is added; the verbatim text is kept):\n"
+            "1. Read the file. Summarize the messages under \"## Verbatim\" from the one at {since} up to and including `<!-- msg {through} …-->`, about {chars} characters.\n"
             "2. Write the summary as chronological bullet points: what the user asked for and decided (quote the key words), what you concluded and finished, "
             "files changed, key numbers, what is still open. No secrets, passwords or personal data. About a tenth to a fifth of the original length.\n"
             "3. Run this, with the summary between the two EOF lines:\n"
@@ -76,11 +76,11 @@ _T = {
             "(summary)\n"
             "EOF\n"
             "(If heredocs are not available, write the summary to a temporary file and pass --summary-file <path> instead.)\n"
-            "4. Do not edit the file by hand and do nothing else. When done, reply with one line: conversation record compacted."),
+            "4. Do not edit the file by hand and do nothing else. When done, reply with one line: conversation record summarized."),
         'convo_no_file': 'No conversation record at {file} (or it is not in the expected format); nothing changed.',
         'convo_short': 'Summary too short (under 20 characters); nothing written.',
-        'convo_bad_through': '--through {through} is not valid: use the time given in the hook request, later than the part already folded ({old}). Nothing changed.',
-        'convo_compacted': '✓ Folded the conversation up to {upto} into the summary: {file}',
+        'convo_bad_through': '--through {through} is not valid: use the time given in the hook request, later than the part already summarized ({old}). Nothing changed.',
+        'convo_compacted': '✓ Summarized the conversation up to {upto} (verbatim kept): {file}',
         'convo_recent': 'Recent conversation records (open one to see what was discussed):',
         'convo_paused_note': '⏸ The user paused recording; what follows was not recorded.',
         'convo_paused_filled_note': '⏸ The user paused recording here; the paused part was added back when recording resumed.',
@@ -163,19 +163,19 @@ _T = {
         'autosync_unsupported': 'autosync: {os} 上没有可用的调度后端',
         'upgraded': '✓ 已安装 team-sync {version}',
         'convo_title': '# 对话记录 · {who} · {agent} · {date} 开始',
-        'convo_intro': '> team-sync 在每轮对话结束时自动写入:只有双方说的话,不含工具调用和工具输出;密钥形状的字符串已换成 [redacted]。原文超过 {limit} 字时,较早的部分由 agent 压缩进「摘要」。时间按写入这份记录的电脑的时区({tz})。',
+        'convo_intro': '> team-sync 在每轮对话结束时自动写入:只有双方说的话,不含工具调用和工具输出;密钥形状的字符串已换成 [redacted]。原文每多出 {limit} 字,agent 会给较早的部分补一段「摘要」放在前面,原文照样保留。时间按写入这份记录的电脑的时区({tz})。',
         'convo_opening': '> 第一句: {title}',
         'convo_parent': '> 接续自 {file}(从那个会话 fork 或续接而来);之前的对话在那份记录里,这里不重复。',
         'convo_prev_month': '> 同一个会话之前的记录在 {file}(一个月一个文件)。',
         'convo_next_month': '> 这个会话之后的记录在 {file}(一个月一个文件)。',
-        'convo_summaries': '## 摘要(较早的部分)',
+        'convo_summaries': '## 摘要',
         'convo_none': '(还没有)',
         'convo_raw': '## 原文',
         'convo_raw_since': '## 原文({since} 之后)',
         'convo_range': '### {a} 至 {b}',
         'convo_compact_ask': (
-            "[团队同步 hook,不是用户发言] 本会话的对话记录 {file} 原文部分已有 {n} 字,超过上限 {limit} 字。请把较早的一段压缩成摘要,其余保持原文:\n"
-            "1. 读这个文件。要压缩的是「## 原文」下从第一条({since})到 `<!-- msg {through} …-->` 这一条(含)为止的消息,约 {chars} 字。\n"
+            "[团队同步 hook,不是用户发言] 本会话的对话记录 {file} 还没写摘要的原文已有 {n} 字,超过 {limit} 字。请给较早的一段补写摘要(只加摘要,原文会保留,不会删):\n"
+            "1. 读这个文件。要写摘要的是「## 原文」下从 {since} 那条到 `<!-- msg {through} …-->` 这一条(含)为止的消息,约 {chars} 字。\n"
             "2. 用中文写摘要,按时间顺序分点:用户提的要求和做的决定(关键处保留原话)、你给出的结论和做完的事、改动的文件、关键数字、还没做完的事。"
             "不写密钥、口令和个人隐私。长度约为原文的十分之一到五分之一。\n"
             "3. 运行下面的命令,摘要放在两行 EOF 之间:\n"
@@ -183,11 +183,11 @@ _T = {
             "(摘要)\n"
             "EOF\n"
             "(用不了 heredoc 时,把摘要写进一个临时文件,改用 --summary-file <路径>。)\n"
-            "4. 不要手动改这个文件,也不要做别的事。完成后只回复一句:对话记录已压缩。"),
+            "4. 不要手动改这个文件,也不要做别的事。完成后只回复一句:对话记录已补摘要。"),
         'convo_no_file': '没找到对话记录 {file}(或格式不对),没有改动。',
         'convo_short': '摘要太短(不到 20 字),没有写入。',
-        'convo_bad_through': '--through {through} 不对:要用 hook 提示里给的时间,并且要晚于已经压缩到的 {old}。没有改动。',
-        'convo_compacted': '✓ 已把 {upto} 及之前的对话压缩进摘要: {file}',
+        'convo_bad_through': '--through {through} 不对:要用 hook 提示里给的时间,并且要晚于已经写过摘要的 {old}。没有改动。',
+        'convo_compacted': '✓ 已给 {upto} 及之前的对话补上摘要(原文保留): {file}',
         'convo_recent': '最近的对话记录(想知道之前聊过什么,打开对应文件):',
         'convo_paused_note': '⏸ 用户暂停了记录,之后的对话没有记下来。',
         'convo_paused_filled_note': '⏸ 用户在这里暂停了记录;恢复时补上了暂停期间的内容。',

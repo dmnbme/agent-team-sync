@@ -349,7 +349,8 @@ def _index(cfg):
     _save(ip, idx)
     for _, cp, st in sessions:                                    # re-render every record so the copies drop out
         agent, sid = cp.stem.split('_', 1)
-        _save(cp, {'path': st['path'], 'offset': 0, 'msgs': [], 'file': st.get('file'), 'off': st.get('off'), 'prev_file': st.get('prev_file')})
+        keep = {k: st[k] for k in ('continues', 'continued_by', 'forked_after', 'sessions', 'chain_parent') if st.get(k)}
+        _save(cp, {'path': st['path'], 'offset': 0, 'msgs': [], 'file': st.get('file'), 'off': st.get('off'), 'prev_file': st.get('prev_file'), **keep})
         update(cfg, agent, {'session_id': sid, 'transcript_path': st['path'], 'no_ask': True}, idx)
     return idx
 
@@ -434,13 +435,46 @@ def _head(cfg, agent, sid, st, msgs, prev):
     first_user = next((m[2] for m in msgs if m[1] == 'user'), '')
     head = {'session': sid, 'agent': agent, 'who': cfg.who(), 'title': re.sub(r'\s+', ' ', first_user)[:60] or prev.get('title', ''),
             'start': msgs[0][0], 'last': msgs[-1][3], 'through': prev.get('through') or ''}
+    if prev.get('summarized'):                                    # summarized up to here; the verbatim text stays (0.1.25+)
+        head['summarized'] = prev['summarized']
     if st.get('parent'):
-        pf = _load(cfg.state_dir / 'convo' / f"{st['parent']}.json").get('file')
+        pst, hops = _load(cfg.state_dir / 'convo' / f"{st['parent']}.json"), 0
+        while not pst.get('file') and pst.get('continued_by') and hops < 50:     # its file went on under a later session id
+            pst, hops = _load(cfg.state_dir / 'convo' / f"{pst['continued_by']}.json"), hops + 1
+        pf = pst.get('file')
         if pf:
             head['parent'] = f"{_dir(cfg)}/{pf}"
     if st.get('prev_file'):
         head['prev'] = f"{_dir(cfg)}/{st['prev_file']}"
+    if st.get('sessions'):
+        head['earlier_sessions'] = st['sessions']
     return head
+
+
+def _continue(cfg, st, me, owner, last_copied):
+    """A Claude Code session that was resumed gets a new id and a copy of the whole transcript. When the copy runs up to
+    the last message the earlier session recorded, this is the same conversation going on: take over its file (and its
+    month links, pause state and compaction state) instead of opening a new one. A copy that stops earlier is a branch
+    and keeps its own file. If the earlier session is used again after a takeover, it was a branch after all: from then
+    on it writes a new file linked to this one, so the two never write the same file."""
+    oc = cfg.state_dir / 'convo' / f'{owner}.json'
+    ost = _load(oc)
+    if not st.get('continues'):                                   # first sight: decide
+        if not ost.get('file') or ost.get('last_mid') != last_copied or ost.get('continued_by'):
+            return
+        msgs = ost.get('msgs') or []
+        st.update({'continues': owner, 'file': ost['file'], 'chain_parent': ost.get('chain_parent') or ost.get('parent'),
+                   'sessions': (ost.get('sessions') or []) + [owner.split('_', 1)[-1]]})
+        for k in ('prev_file', 'off', 'held', 'asked', 'asks'):
+            if ost.get(k) is not None:
+                st[k] = ost[k]
+        ost.update({'continued_by': me, 'forked_after': msgs[-1][3] if msgs else '', 'pre': msgs,
+                    'file': None, 'msgs': [], 'prev_file': None, 'asks': 0})
+        ost.pop('asked', None)
+        _save(oc, ost)
+    if not st.get('msgs'):                                        # first takeover, or after an index rebuild
+        st['msgs'] = [list(m) for m in (ost.get('pre') or [])]
+    st['parent'] = st.get('chain_parent')
 
 
 def update(cfg, agent, data, idx=None):
@@ -458,17 +492,28 @@ def update(cfg, agent, data, idx=None):
     if st.get('path') != tpath or os.path.getsize(tpath) < int(st.get('offset') or 0):
         st = {'path': tpath, 'offset': 0, 'msgs': [], 'file': st.get('file'), 'off': st.get('off')}
     new, st['offset'] = _read(tpath, int(st.get('offset') or 0), PARSERS[agent])
-    me, own = cf.stem, []
+    me, own, copied = cf.stem, [], None
     for iso, role, text, mid in new:
         owner = idx['ids'].get(mid) if mid else None
         if owner and owner != me:                                 # copied from an earlier session
             st['parent'] = owner                                 # the latest session it copied from
+            copied = (owner, mid)
             continue
         if mid:
             idx['ids'][mid] = me
+            st['last_mid'] = mid
         own.append((iso, role, redact(cfg, text)))
     if new and any(m[-1] for m in new):
         _save(_index_path(cfg), idx)
+    if st.get('forked_after'):                                    # this session's file was taken over; see _continue
+        pre = [m for m in own if m[0] <= st['forked_after']]
+        own = [m for m in own if m[0] > st['forked_after']]
+        if pre:                                                   # only on an index rebuild: what the successor inherits
+            _append(st.setdefault('pre', []), pre)
+    if st.get('continues') or (copied and not st.get('file')):
+        _continue(cfg, st, me, st.get('continues') or copied[0], None if st.get('continues') else copied[1])
+    if st.get('continued_by'):                                    # a branch of the session that took over its file
+        st['parent'] = st['continued_by']
     new = own
     _apply(cfg, st, new)
     msgs = st['msgs']
@@ -478,7 +523,10 @@ def update(cfg, agent, data, idx=None):
         _save(cf, st)
         return None
     if not st.get('file'):
-        st['file'] = _name(cfg, agent, sid, msgs[0][0])
+        st['file'] = name = _name(cfg, agent, sid, msgs[0][0])
+        n = 2
+        while st.get('continued_by') and (cfg.repo / _dir(cfg) / st['file']).exists():   # its old file lives on elsewhere
+            st['file'] = name[:-3] + f'_{n}.md'; n += 1
     limit, keep = int(c.get('compact_chars') or 30000), int(c.get('keep_recent_chars') or 8000)
     # One file per session per month: when a session runs into a new month, this month's file is closed (with a link
     # forward) and the session goes on in a file under the new month's folder (with a link back).
@@ -515,7 +563,7 @@ def update(cfg, agent, data, idx=None):
 
 
 def _ask(cfg, st, head, msgs, limit, keep, data, path):
-    through = head['through']
+    through = max(head.get('through') or '', head.get('summarized') or '')
     raw = [m for m in msgs if not through or m[0] > through]
     size = sum(len(m[2]) for m in raw)
     if size <= limit:
@@ -556,7 +604,7 @@ def compact(cfg, file, through, summary):
     if len(summary) < 20:
         print(t(L, 'convo_short'))
         return 1
-    old = head.get('through') or ''
+    old = max(head.get('through') or '', head.get('summarized') or '')
     if not re.fullmatch(r'\d{4}-\d{2}-\d{2}T[0-9:.]+(Z|[+-]\d{2}:\d{2})?', through or '') or through <= old:
         print(t(L, 'convo_bad_through', through=through, old=old or '-'))
         return 1
@@ -564,14 +612,12 @@ def compact(cfg, file, through, summary):
     starts = [x.start() for x in MSG_MARK.finditer(body)]
     blocks = [body[a:b] for a, b in zip(starts, starts[1:] + [len(body)])]
     covered = [x for x in blocks if old < MSG_MARK.match(x).group(1) <= through]
-    kept = [x for x in blocks if MSG_MARK.match(x).group(1) > through]
     first = MSG_MARK.match(covered[0]).group(1) if covered else through
     cur = s[i + len(SUM_START):j].strip()
     block = t(L, 'convo_range', a=_local(first), b=_local(through)) + '\n\n' + summary
-    head['through'] = through
+    head['summarized'] = through                                  # the summary is added on top; the verbatim text is kept
     out = (s[:m.start(1)] + _dump(head) + s[m.end(1):i + len(SUM_START)] + '\n'
-           + (block if cur in ('', t(L, 'convo_none')) else cur + '\n\n' + block) + '\n' + SUM_END + '\n\n'
-           + t(L, 'convo_raw_since', since=_local(through)) + '\n\n' + ''.join(kept))
+           + (block if cur in ('', t(L, 'convo_none')) else cur + '\n\n' + block) + '\n' + SUM_END + body)
     _write(cfg, path, out.rstrip('\n') + '\n')
     cf = _cache(cfg, head.get('agent', ''), head.get('session', ''))
     st = _load(cf)

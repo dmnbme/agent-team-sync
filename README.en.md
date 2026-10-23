@@ -101,7 +101,7 @@ Good fit: teams of 3 to 10 people who already use coding agents and want to keep
 Requirements: git and Python 3.9 or later (the one that ships with macOS is enough). No third-party packages. The shared drive can be any service that syncs to a local folder: Google Drive, OneDrive and Dropbox are found automatically; for others (iCloud, Box, a NAS, Syncthing) add a path pattern under `drive.patterns` in `team-sync.json`, or set `<PREFIX>_DRIVE_ROOT=path` in each machine's `.env.team`.
 
 ```bash
-git clone --branch v0.1.24 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # members: git only
+git clone --branch v0.1.25 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # members: git only
 pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.23"  # maintainers: gives the team-sync command
 ```
 
@@ -133,7 +133,7 @@ Main fields of `team-sync.json`:
   "convo": { "dir": "docs/conversations", "compact_chars": 30000, "keep_recent_chars": 8000, "keep_email_domains": ["acme.com"] },
   "inbox": { "dir": "docs/inbox" },
   "notify": { "icon": "tools/notify-icon.png" },
-  "version": "0.1.24"
+  "version": "0.1.25"
 }
 ```
 
@@ -176,7 +176,7 @@ Add `"convo": {"dir": "docs/conversations"}` to `team-sync.json` to turn them on
 
 - Left out: tool calls, tool output, thinking, injected context. Kept: what both sides said, and the user's answers to multiple-choice questions.
 - Redaction: credential-shaped strings become `[redacted]`; e-mail addresses become `[email]`, except for domains listed in `keep_email_domains`.
-- Compaction: when the verbatim part passes `compact_chars`, the hook asks the running agent at the end of that turn to write a summary and run `team-sync convo compact`. The newest `keep_recent_chars` stay verbatim.
+- Summaries: when the text not yet summarized passes `compact_chars`, the hook asks the running agent at the end of that turn to summarize the older part and run `team-sync convo compact`. The summary goes at the top of the file and the verbatim text is all kept (from 0.1.25; earlier versions dropped the text they summarized). The newest `keep_recent_chars` are left out of that summary.
 - Pause and resume: only these fixed phrases count (string matching, no model in the hook; `[...]` is case-insensitive):
 
   | Effect | Phrases |
@@ -186,7 +186,7 @@ Add `"convo": {"dir": "docs/conversations"}` to `team-sync.json` to turn them on
   | Resume and add the paused part (for a false trigger) | `[record-all]`, `恢复记录并补上`, `补上刚才的记录` |
 
   Conditions: the phrase opens the message, or ends it with at most 6 characters before it (spaces removed); and nothing in the message reads as a question (`?`, `？`, what, how, does, will, if, or the Chinese 吗, 怎么, 怎样, 如何, 如果, 假如, 会不会, 是不是, 能不能, 可不可以). Other wordings do not trigger. The paused part is kept only in the local cache, never in the repository; the record marks where recording paused and resumed. While paused, every turn tells the user: the hook sends a UI notice and asks the agent to open its reply with the same line (the Codex desktop app does not show hook notices, and Claude Code folds them). `TEAM_SYNC_NO_CONVO=1`, or `<PREFIX>_CONVO=off` in the env file, turns recording off on one machine.
-- Forked or continued sessions: the earlier conversation copied into the new session is not recorded again; the file starts with a link to the record it continues. This is decided by message id, with an index on each machine.
+- Resumed and branched sessions: Claude Code gives a resumed session a new id and a copy of the whole earlier conversation. When the copy runs up to the last message the earlier session recorded, it is the same conversation going on and keeps writing the same file, whose header lists the earlier session ids. A copy that stops at an earlier message is a branch from there: it gets its own file with only its own messages, linked back to the record. If the earlier session is used again after its file was taken over, it was a branch after all, and from then on writes a new file with a `_2` suffix, so the two never write the same file. This is decided by message id, with an index on each machine. Codex keeps the same id when a session is resumed, so it always writes one file.
 - Everyone with access to the repository can read the records. Tell the people whose conversations are recorded before turning this on.
 
 ## Messages

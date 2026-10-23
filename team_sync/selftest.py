@@ -170,11 +170,13 @@ def run(cfg, keep=False):
     if fm and tm:
         out = ts(A, 'convo', 'compact', '--file', fm.group(1), '--through', tm.group(1), stdin='用户要求把首页标题和副标题改短,选了短版,已改好;之后连续问了十几个测试问题。')
         body = rec.read_text(encoding='utf-8'); raw = body.split('<!-- summaries:end -->', 1)[-1]
-        check('compact writes the summary, drops what it covers', '选了短版' in body and '把首页标题改短一点' not in raw and '第 11 个回答' in raw, out[:80])
+        check('summary added on top, the verbatim text kept', '选了短版' in body.split('<!-- summaries:end -->', 1)[0]
+              and '把首页标题改短一点' in raw and '第 11 个回答' in raw, out[:80])
         out = ts(A, 'hook', 'claude', 'stop', stdin=stdin())
-        check('back under the limit afterwards', out.strip() == '{}', out[:80])
+        check('no new request until another limit of new text', out.strip() == '{}', out[:80])
+        check('the next turn keeps both', '选了短版' in rec.read_text(encoding='utf-8') and '把首页标题改短一点' in rec.read_text(encoding='utf-8'))
     else:
-        check('compact writes the summary, drops what it covers', False, 'no --file / --through in the request')
+        check('summary added on top, the verbatim text kept', False, 'no --file / --through in the request')
     tr2 = tmp / 'claude-selftest-2.jsonl'
     jsonl(tr2, [cu('2026-01-04T00:00:00.000Z', '不记录这段对话。帮我看看这份私人文件'), ca('2026-01-04T00:00:05.000Z', tx('好的。'))])
     ts(A, 'hook', 'claude', 'stop', stdin=json.dumps({'session_id': 'norecord1', 'transcript_path': str(tr2)}))
@@ -223,19 +225,34 @@ def run(cfg, keep=False):
     check('Claude Code turn end: the record is pushed right away', '_claude_askabou' in pushed)
     check('session start lists recent records', cdir + '/' in ts(A, 'start'))
 
-    print('7b forked session: copied history is not recorded twice')
-    pa, pb = tmp / 'claude-parent.jsonl', tmp / 'claude-fork.jsonl'
+    print('7b resumed and branched sessions (Claude Code gives a resumed session a new id and a copy of the history)')
+    pa, pr, pb = tmp / 'claude-parent.jsonl', tmp / 'claude-resume.jsonl', tmp / 'claude-branch.jsonl'
     base = [dict(cu('2026-01-05T00:00:00.000Z', '父会话的第一个问题'), uuid='u1', sessionId='parentsess'),
             dict(ca('2026-01-05T00:00:10.000Z', tx('父会话的回答')), uuid='u2', sessionId='parentsess')]
     jsonl(pa, base)
     ts(A, 'hook', 'claude', 'stop', stdin=json.dumps({'session_id': 'parentsess', 'transcript_path': str(pa)}))
-    jsonl(pb, base + [dict(cu('2026-01-05T00:05:00.000Z', 'fork 之后的新问题'), uuid='u3', sessionId='forksess1'),
-                      dict(ca('2026-01-05T00:05:10.000Z', tx('fork 之后的回答')), uuid='u4', sessionId='forksess1')])
-    ts(A, 'hook', 'claude', 'stop', stdin=json.dumps({'session_id': 'forksess1', 'transcript_path': str(pb)}))
-    fk = next(iter((A / cdir).glob('*/*_claude_forksess*.md')), None)
+    jsonl(pr, base + [dict(cu('2026-01-05T00:05:00.000Z', '恢复之后接着问'), uuid='u3', sessionId='resumesess'),
+                      dict(ca('2026-01-05T00:05:10.000Z', tx('恢复之后的回答')), uuid='u4', sessionId='resumesess')])
+    ts(A, 'hook', 'claude', 'stop', stdin=json.dumps({'session_id': 'resumesess', 'transcript_path': str(pr)}))
+    pf = next(iter((A / cdir).glob('*/*_claude_parentse*.md')), None)
+    pt = pf.read_text(encoding='utf-8') if pf else ''
+    check('resumed session: goes on in the same file, nothing repeated', '恢复之后接着问' in pt and pt.split('<!-- summaries:end -->')[-1].count('父会话的第一个问题') == 1
+          and 'parentsess' in pt and not list((A / cdir).glob('*/*_claude_resumese*.md')))
+    jsonl(pb, base[:1] + [dict(cu('2026-01-05T00:06:00.000Z', '从中间分出去的问题'), uuid='u5', sessionId='branchsess'),
+                          dict(ca('2026-01-05T00:06:10.000Z', tx('分支的回答')), uuid='u6', sessionId='branchsess')])
+    ts(A, 'hook', 'claude', 'stop', stdin=json.dumps({'session_id': 'branchsess', 'transcript_path': str(pb)}))
+    fk = next(iter((A / cdir).glob('*/*_claude_branchse*.md')), None)
     fb = fk.read_text(encoding='utf-8') if fk else ''
-    check('fork record: only its own messages, linked to the parent', 'fork 之后的新问题' in fb and '父会话的第一个问题' not in fb.split('<!-- summaries:end -->')[-1]
-          and '_claude_parentse' in fb)
+    check('branch from the middle: its own file, only its own messages, linked back', '从中间分出去的问题' in fb
+          and '父会话的第一个问题' not in fb.split('<!-- summaries:end -->')[-1] and '_claude_parentse' in fb)
+    jsonl(pa, base + [dict(cu('2026-01-05T00:07:00.000Z', '原会话又接着说'), uuid='u7', sessionId='parentsess'),
+                      dict(ca('2026-01-05T00:07:10.000Z', tx('原会话的回答')), uuid='u8', sessionId='parentsess')])
+    ts(A, 'hook', 'claude', 'stop', stdin=json.dumps({'session_id': 'parentsess', 'transcript_path': str(pa)}))
+    pt2 = pf.read_text(encoding='utf-8') if pf else ''
+    later = [p for p in (A / cdir).glob('*/*_claude_parentse*.md') if p != pf]
+    lt = later[0].read_text(encoding='utf-8') if later else ''
+    check('earlier session used again after a takeover: new file, the shared one untouched', '原会话又接着说' in lt
+          and '原会话又接着说' not in pt2 and '恢复之后接着问' in pt2 and pf.name in lt, [p.name for p in later])
 
     print('8 journal: concurrent lines merge; auto line only at session end')
     C = tmp / 'carol'

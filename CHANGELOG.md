@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.25 (2026-10-24)
+
+- A resumed Claude Code session goes on in the same record. Claude Code gives a session a new id each time it is resumed (app restart, reopening an idle session, after its own context compaction) and copies the whole conversation in; team-sync took every such copy for a fork, so one long conversation ended up cut into a file per resume. Now a copy that runs up to the last message the earlier session recorded is treated as the same conversation: the new id takes over the file, its month links, pause state and summaries, and the header lists the earlier ids (`earlier_sessions`). A copy that stops earlier is still a branch with its own file. If the earlier id is used again after the takeover, it writes a new `_2` file linked to the shared one, so two sessions never write the same file. Codex keeps its id on resume and is unaffected.
+- Summaries no longer delete the verbatim text. When the text not yet summarized passes `compact_chars`, the agent is still asked for a summary of the older part, but it is added at the top and the conversation stays in full (`summarized` in the header marks how far the summaries go). Long-running sessions lost more and more of their own wording before; the monthly files from 0.1.23 already keep each file to a month. Parts summarized by earlier versions stay as they are.
+
 ## 0.1.24 (2026-10-24)
 
 - Desktop notification for new messages. When a sync (turn end or the background autosync) pulls in a message for you that has not been delivered yet, the computer shows a notification with the sender and how the message starts; before, nothing happened until you happened to start a session or send a turn. Once per message, remembered locally; the notice does not mark the message delivered, so the agent still relays it and the sender still gets the receipt when it does.
