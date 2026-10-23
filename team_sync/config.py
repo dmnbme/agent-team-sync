@@ -26,6 +26,7 @@ DEFAULTS = {
     'sync': {'autosync_interval_sec': 300, 'log_commits': 12, 'journal_tail': 8, 'inject_ttl_hours': 6},
     'convo': {'dir': '', 'compact_chars': 30000, 'keep_recent_chars': 8000, 'keep_email_domains': []},   # dir set = records on
     'inbox': {'dir': ''},                                                                                # dir set = messages on
+    'notify': {'icon': ''},                                                                             # repo path of a square .png/.icns for desktop notices
     'source': 'git+https://github.com/dmnbme/agent-team-sync',
     'version': '',
 }

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.24 (2026-10-24)
+
+- Desktop notification for new messages. When a sync (turn end or the background autosync) pulls in a message for you that has not been delivered yet, the computer shows a notification with the sender and how the message starts; before, nothing happened until you happened to start a session or send a turn. Once per message, remembered locally; the notice does not mark the message delivered, so the agent still relays it and the sender still gets the receipt when it does.
+- Clicking a notification opens your agent app: the one that last ran a team-sync hook on this computer (on macOS read from the __CFBundleIdentifier the app gives its processes; on Windows the first non-shell parent process). On macOS the notifications come from a small applet built with osacompile on first use (`~/.team-sync/notify/team-sync.app`), so they show as team-sync rather than Script Editor, and clicking one launches the applet, which opens the agent.
+- `notify.icon` in the config: a square PNG or icns in the repository used as the notification icon (default: the system sync icon). Changing it rebuilds the applet under a new bundle id, because Notification Center caches icons per id; macOS then asks once more to allow notifications.
+- Pull conflicts: a lock held by another git process (an agent committing while a sync runs) is retried after 3 seconds and never reported as a conflict. A real conflict notifies only when the next sync still conflicts, since most clear by themselves; every conflict is logged with its time in the local state dir, and one that cleared is reported once at the next session start, instead of leaving a notification that pointed to nothing.
+
 ## 0.1.23 (2026-10-20)
 
 - One conversation record per session per month. A session that runs into a new month goes on in a new file under that month's folder, named after its first message there; the previous month's file gets a link forward and is no longer changed, the new one a link back. Before, a session kept its first file forever, so a long-lived session wrote months of conversation into the folder of the month it began, and its summaries grew without limit.

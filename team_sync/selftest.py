@@ -272,6 +272,11 @@ def run(cfg, keep=False):
     check('delivered once only', 'selftest 留言一' not in ts(C, 'start'))
     ts(A, 'msg', 'send', 'carol', 'selftest 留言二'); ts(A, 'stop')
     ts(C, 'stop')                                             # what autosync or a turn end does
+    seen_f = C / '.git' / 'team-sync' / 'inbox_notified'
+    box = C / json.loads((C / CONFIG_NAME).read_text(encoding='utf-8'))['inbox']['dir'] / 'carol'
+    names = [p.name for p in box.glob('*.md')]
+    seen = seen_f.read_text(encoding='utf-8').split() if seen_f.exists() else []
+    check('the sync that pulls a new message raises one desktop notice for it', bool(names) and all(n in seen for n in names), seen[:3])
     raw = ts(C, 'hook', 'claude', 'prompt', stdin='{}')
     try:
         ctx = json.loads(raw).get('hookSpecificOutput', {}).get('additionalContext', '')

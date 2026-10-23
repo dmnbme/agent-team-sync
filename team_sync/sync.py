@@ -78,20 +78,14 @@ def serialized(cfg, wait=90):
         fh.close()
 
 
-def notify(cfg, text):
+def notify(cfg, text, title='team-sync', level='Warning'):
+    """Desktop notification; clicking it opens the person's agent app (see notifier.py)."""
     if os.environ.get('TEAM_SYNC_NO_NOTIFY'):                  # selftest: its conflicts are staged, not news
         return
-    safe = text.replace('"', "'").replace("'", '')[:200]
     try:
-        if platform.system() == 'Darwin':
-            subprocess.run(['osascript', '-e', f'display notification "{safe}" with title "team-sync"'], capture_output=True)
-        elif platform.system() == 'Windows':
-            ps = ("Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; "
-                  "$n = New-Object System.Windows.Forms.NotifyIcon; $n.Icon = [System.Drawing.SystemIcons]::Warning; $n.Visible = $true; "
-                  f"$n.ShowBalloonTip(10000, 'team-sync', '{safe}', [System.Windows.Forms.ToolTipIcon]::Warning); Start-Sleep 8; $n.Dispose()")
-            subprocess.Popen(['powershell', '-NoProfile', '-WindowStyle', 'Hidden', '-Command', ps], creationflags=0x08000000)
-        elif platform.system() == 'Linux':
-            subprocess.run(['notify-send', 'team-sync', safe], capture_output=True)
+        from .notifier import show
+        icon = ((cfg.data.get('notify') or {}).get('icon') or '').strip()
+        show(title, text, level, str(cfg.repo / icon) if icon else None)
     except Exception:
         pass
 
@@ -150,35 +144,57 @@ def _net(cfg, *args):
     return git(cfg, *args)
 
 
-def pull(cfg):
+# Git refusing because another git process in this repo holds a lock (an agent committing while a sync runs, two syncs
+# fetching at once). It clears in seconds and is never a conflict.
+LOCKED = ('cannot lock ref', 'index.lock', 'unable to create', 'another git process', 'unable to write')
+
+
+def pull(cfg, _retry=True):
     if git(cfg, 'remote', 'get-url', 'origin').returncode != 0:
         return t(cfg.lang, 'no_origin')
     stashes = lambda: len(git(cfg, 'stash', 'list').stdout.splitlines())
     before = stashes()
     marker = state(cfg, 'conflict.txt')
     # Fetch and rebase separately: a failed fetch is always the network, whatever git's wording, and is never a conflict.
-    if _net(cfg, 'fetch', '--quiet', 'origin').returncode != 0:
+    f = _net(cfg, 'fetch', '--quiet', 'origin')
+    if f.returncode != 0:
+        if _retry and any(k in (f.stderr or '').lower() for k in LOCKED):
+            time.sleep(3); return pull(cfg, _retry=False)
         return t(cfg.lang, 'offline')
     if git(cfg, 'rev-parse', '--abbrev-ref', '@{u}').returncode == 0:
         r = git(cfg, 'rebase', '--autostash', '--quiet', '@{u}')
     else:                                                       # no upstream set: let pull pick the branch
         r = git(cfg, 'pull', '--rebase', '--autostash', '--quiet')
     if r.returncode == 0:
-        if marker.exists():
+        if marker.exists():                                     # an earlier conflict cleared by itself: say so once, at the next start
+            state(cfg, 'conflict_resolved.txt').write_text(
+                marker.read_text(encoding='utf-8').splitlines()[0] + '\n' + f'{dt.datetime.now():%Y-%m-%d %H:%M}\n', encoding='utf-8')
             marker.unlink()
         return t(cfg.lang, 'pulled')
     out = (r.stderr or r.stdout).strip()
     gd = cfg.repo / '.git'
-    if not (gd / 'rebase-merge').exists() and not (gd / 'rebase-apply').exists():
+    started = (gd / 'rebase-merge').exists() or (gd / 'rebase-apply').exists()
+    if started:
+        git(cfg, 'rebase', '--abort')
+        if stashes() > before:                                   # only pop an autostash git left behind, never an older stash
+            git(cfg, 'stash', 'pop')
+    if any(k in out.lower() for k in LOCKED) and 'CONFLICT' not in out:
+        if _retry:
+            time.sleep(3); return pull(cfg, _retry=False)
+        return '⚠ ' + t(cfg.lang, 'git_busy')
+    if not started:
         return '⚠ ' + out[:300]                                 # failed before any rebase started: nothing to undo, not a conflict
-    git(cfg, 'rebase', '--abort')
-    if stashes() > before:                                       # only pop an autostash git left behind, never an older stash
-        git(cfg, 'stash', 'pop')
     raw = out.splitlines()
     gist = [l for l in raw if 'CONFLICT' in l or 'could not apply' in l or l.startswith('error:')][:3] or raw[:2]
     msg = t(cfg.lang, 'conflict') + '\n   ' + '\n   '.join(l[:160] for l in gist)
-    marker.write_text(f'{dt.datetime.now():%Y-%m-%d %H:%M}\n{msg}\n', encoding='utf-8')
-    notify(cfg, t(cfg.lang, 'conflict_notify'))
+    again = marker.exists()
+    now = f'{dt.datetime.now():%Y-%m-%d %H:%M}'
+    first = marker.read_text(encoding='utf-8').splitlines()[0] if again else now
+    marker.write_text(f'{first}\n{msg}\n', encoding='utf-8')
+    with open(state(cfg, 'conflicts.log'), 'a', encoding='utf-8') as fh:
+        fh.write(f'{now}\n{msg}\n')
+    if again:                                                   # notify only when it did not clear by the next sync
+        notify(cfg, t(cfg.lang, 'conflict_notify', since=first))
     return msg
 
 
@@ -231,6 +247,13 @@ def _start_body(cfg, pull_ok=True):
     marker = state(cfg, 'conflict.txt')
     if marker.exists():
         lines.append(t(cfg.lang, 'conflict_pending') + '\n   ' + marker.read_text(encoding='utf-8').strip().replace('\n', '\n   '))
+    solved = state(cfg, 'conflict_resolved.txt')
+    if solved.exists():
+        try:
+            at, fixed = (solved.read_text(encoding='utf-8').splitlines() + ['', ''])[:2]
+            lines.append(t(cfg.lang, 'conflict_resolved', at=at, fixed=fixed))
+        finally:
+            solved.unlink()
     wanted = cfg.data.get('version')
     if wanted and wanted != __version__:
         lines.append(t(cfg.lang, 'version_mismatch', installed=__version__, wanted=wanted))
@@ -371,6 +394,8 @@ def _commit_push(cfg, staged):
         msg = pull(cfg)
         if msg.startswith('⚠'):
             print(msg); return
+        from .inbox import alert                                # turn-end and autosync runs: a desktop notice for new messages
+        alert(cfg)
         p = _net(cfg, 'push', '--quiet')
         print(t(cfg.lang, 'pushed') if p.returncode == 0 else t(cfg.lang, 'push_failed', err=(p.stderr or p.stdout).strip()[:300]))
     if cfg.get('TEAM_KEY'):
@@ -438,6 +463,8 @@ def hook(cfg, kind, event):
         data = {}
     out = {}
     try:
+        from .notifier import remember_agent                    # which app to open when a notification is clicked
+        remember_agent(kind)
         if kind == 'codex':
             from .convo import codex_is_exec
             if codex_is_exec(data):                              # a script calling `codex exec`: no sync, no record

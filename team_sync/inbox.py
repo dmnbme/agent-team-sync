@@ -6,7 +6,9 @@
 One file per message: <inbox.dir>/<recipient>/<YYYY-MM-DD_HHMMSS>_<sender>.md, so two people writing at once never
 touch the same file. The recipient's agent gets unread messages at session start and before each turn (the
 UserPromptSubmit hook; only a local read, autosync and turn-end syncs bring new ones in). Delivering marks the file
-read; the receipt syncs back and shows in the sender's next session summary.
+read; the receipt syncs back and shows in the sender's next session summary. When a sync pulls in a message nobody has
+delivered yet, the person also gets one desktop notification for it, so they know to open their agent; the notice does
+not mark it read.
 
 A message is relayed to the person, never executed by their agent: anyone who can push to the repo could otherwise
 steer a teammate's agent, and the person would not know why it acted.
@@ -114,6 +116,42 @@ def deliver(cfg):
         return '\n'.join(lines)
     except Exception:  # noqa: BLE001
         return ''
+
+
+def alert(cfg):
+    """One desktop notification per new unread message for this person (remembered in the local state dir). Never raises."""
+    try:
+        d = _dir(cfg)
+        box = d / cfg.who().lower() if d else None
+        if not box or not box.is_dir():
+            return
+        seen_f = cfg.state_dir / 'inbox_notified'
+        seen = set(seen_f.read_text(encoding='utf-8').split()) if seen_f.exists() else set()
+        new = []
+        for p in sorted(box.glob('*.md')):
+            if p.name in seen:
+                continue
+            meta, body = _read(p)
+            if meta and not meta.get('read'):
+                new.append((meta, body))
+            seen.add(p.name)
+        cfg.state_dir.mkdir(parents=True, exist_ok=True)
+        seen_f.write_text('\n'.join(sorted(seen)) + '\n', encoding='utf-8')
+        if not new:
+            return
+        from .sync import notify
+        cap = lambda n: n[:1].upper() + n[1:]                   # names are stored lower-case; Yulu, not yulu
+        if len(new) == 1:
+            meta, body = new[0]
+            title = t(cfg.lang, 'inbox_alert_title', frm=cap(meta.get('from', '?')))
+            text = ' '.join(_text(body).split())[:150]
+        else:
+            frm = ', '.join(sorted({cap(m.get('from', '?')) for m, _ in new}))
+            title = t(cfg.lang, 'inbox_alert_title_n', n=len(new))
+            text = t(cfg.lang, 'inbox_alert_many', frm=frm)
+        notify(cfg, text + t(cfg.lang, 'inbox_alert_tail'), title=title, level='Information')
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def receipts(cfg, since):
