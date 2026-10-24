@@ -101,7 +101,7 @@ Codex 第一次打开项目时，要信任这个文件夹，再在「设置 → 
 依赖只有 git 和 Python 3.9 以上（macOS 自带的就够），不用安装任何第三方库。共享盘可以是任何会同步成本地文件夹的服务：Google Drive、OneDrive、Dropbox 能自动找到，其他的（坚果云、iCloud、NAS 等）在 `team-sync.json` 的 `drive.patterns` 里加一条路径规则，或在每台电脑的 `.env.team` 里写 `<前缀>_DRIVE_ROOT=路径`。
 
 ```bash
-git clone --branch v0.1.25 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # 成员:只需要 git
+git clone --branch v0.1.26 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # 成员:只需要 git
 pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.23"  # 维护者:得到 team-sync 命令
 ```
 
@@ -133,7 +133,7 @@ git add -A && git commit -m "team-sync" && git push
   "convo": { "dir": "docs/对话记录", "compact_chars": 30000, "keep_recent_chars": 8000, "keep_email_domains": ["acme.com"] },
   "inbox": { "dir": "docs/留言" },
   "notify": { "icon": "tools/notify-icon.png" },
-  "version": "0.1.25"
+  "version": "0.1.26"
 }
 ```
 
@@ -187,6 +187,7 @@ team-sync lease release collect:telegram:main [--force]
 
   触发条件：放在消息开头，或者消息以它结尾、前面最多 6 个字（先去掉空格）；整条消息里不能有提问的迹象（`?`、`？`、吗、怎么、怎样、如何、如果、假如、会不会、是不是、能不能、可不可以、what、how、does、will、if）。换别的说法不会触发。暂停期间的内容只存在本机缓存里，不进仓库；记录里标出暂停和恢复的位置。暂停时每一轮都会提示用户：hook 在界面上发提示，同时要求 agent 在回复第一行原样写出（Codex 桌面版不显示 hook 提示，Claude Code 把它折叠起来）。环境变量 `TEAM_SYNC_NO_CONVO=1` 或 env 文件里的 `<前缀>_CONVO=off` 关闭整台电脑的记录。
 - 恢复和分支：Claude Code 每次恢复会话都换一个新的会话 ID，再把整段旧对话复制进去。复制的内容正好到上一个会话记下的最后一条时，算同一个对话接着聊，继续写原来的文件，文件开头记下之前用过的会话 ID；只复制到中间某条的，是从那里分出去的分支，另开文件，只记自己的话，开头链接回原记录。被接着写的旧会话如果之后又有人说话，说明当时其实是分支，它从那以后写进一个带 `_2` 后缀的新文件，两边不会写同一个文件。按消息 ID 判断，每台电脑上有一份索引。Codex 恢复会话时 ID 不变，一直写同一个文件。
+- 回退（rewind）：用户在 Claude Code 里 rewind，或在 Codex 里回退几轮之后，被撤回的那几条不删，在记录里折叠在「↩ 已撤回」下面，原文留作参考，重来之后的对话照常往下记。Claude Code 按新消息的 `parentUuid` 判断它接在哪条后面（rewind 不会在记录里另写标记）；Codex 按记录里的 `thread_rolled_back` 事件和它撤回的轮数。rewind 只撤回对话，撤回时还原的文件改动不受影响：之前的改动已经提交推送了，还原会作为一次新的改动再提交上去。
 - 仓库里的人都能看到这些记录，开启前要告诉被记录的人。
 
 ## 留言

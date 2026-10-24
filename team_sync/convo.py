@@ -11,6 +11,7 @@ environment, or <PREFIX>_CONVO=off in the env file, turns recording off on that 
 """
 import datetime as dt
 import glob
+import itertools
 import json
 import os
 import pathlib
@@ -123,6 +124,8 @@ def _claude(d):
 
 def _codex(d):
     p = d.get('payload') or {}
+    if d.get('type') == 'event_msg' and p.get('type') == 'thread_rolled_back':   # the user stepped back N turns
+        return [(d.get('timestamp') or '', 'rollback', str(int(p.get('num_turns') or 0)))]
     if d.get('type') != 'response_item' or p.get('type') != 'message' or p.get('role') not in ('user', 'assistant'):
         return []
     ts = d.get('timestamp') or ''
@@ -160,8 +163,10 @@ def codex_is_exec(data):
     return False
 
 
-def _read(path, offset, parse):
-    """Complete lines from byte `offset`; a half-written last line waits for the next call."""
+def _read(path, offset, parse, tip=None):
+    """Complete lines from byte `offset`; a half-written last line waits for the next call. Each item gets its message
+    id and, for a Claude Code prompt, (parentUuid, the entry just before it): they differ after a rewind. `tip` is the
+    last entry seen by the previous call."""
     with open(path, 'rb') as f:
         f.seek(offset)
         chunk = f.read()
@@ -172,10 +177,14 @@ def _read(path, offset, parse):
             d = json.loads(line)
         except ValueError:
             continue
-        if isinstance(d, dict):
-            mid = d.get('uuid') or (d.get('payload') or {}).get('id') or ''   # message id: survives forks and continuations
-            out.extend(item + (mid,) for item in parse(d))
-    return out, offset + end
+        if not isinstance(d, dict):
+            continue
+        mid = d.get('uuid') or (d.get('payload') or {}).get('id') or ''   # message id: survives forks and continuations
+        link = (d.get('parentUuid'), tip) if d.get('type') == 'user' and 'parentUuid' in d else None
+        out.extend(item + (mid, link if item[1] == 'user' else None) for item in parse(d))
+        if d.get('uuid') and not d.get('isSidechain'):
+            tip = d['uuid']
+    return out, offset + end, tip
 
 
 # ---------------------------------------------------------------- helpers
@@ -270,7 +279,7 @@ def _save(p, st):
         pass
 
 
-def _render(cfg, head, summaries, msgs, limit):
+def _render(cfg, head, summaries, msgs, limit, withdrawn=()):
     L, through = cfg.lang, head.get('through') or ''
     agent = AGENT_LABEL.get(head['agent'], head['agent'])
     out = [t(L, 'convo_title', who=head['who'], agent=agent, date=_local(head['start'], '%Y-%m-%d')),
@@ -286,14 +295,25 @@ def _render(cfg, head, summaries, msgs, limit):
         out.append(t(L, 'convo_opening', title=head['title']))
     out += ['', t(L, 'convo_summaries'), SUM_START, summaries.strip() or t(L, 'convo_none'), SUM_END, '',
             t(L, 'convo_raw_since', since=_local(through)) if through else t(L, 'convo_raw'), '']
-    for row in msgs:
+    gone = lambda iso: any(a <= iso <= b for a, b in withdrawn or ())
+    folded = False
+    for k, row in enumerate(msgs):
         iso, role, text = row[0], row[1], row[2]
         if through and iso <= through:
             continue
+        if gone(iso) != folded:                                   # taken back by a rewind: folded, verbatim kept
+            if folded:
+                out += ['</details>', '']
+            else:
+                n = sum(1 for _ in itertools.takewhile(lambda m: gone(m[0]), msgs[k:]))
+                out += ['<details>', f"<summary>{t(L, 'convo_withdrawn', n=n)}</summary>", '']
+            folded = not folded
         if role == 'note':                                        # pause / resume
             out += [f'<!-- msg {iso} note -->', f'> {_local(iso)} · {text}', '']
             continue
         out += [f'<!-- msg {iso} {role} -->', f"**{_local(iso)} · {head['who'] if role == 'user' else agent}**", '', text, '']
+    if folded:
+        out += ['</details>', '']
     return '\n'.join(out).rstrip('\n') + '\n'
 
 
@@ -342,10 +362,10 @@ def _index(cfg):
         agent = cp.stem.split('_', 1)[0]
         if agent not in PARSERS:
             continue
-        msgs, _ = _read(st['path'], 0, PARSERS[agent])
+        msgs, _, _ = _read(st['path'], 0, PARSERS[agent])
         for m in msgs:
-            if m[-1]:
-                idx['ids'].setdefault(m[-1], cp.stem)
+            if m[3]:
+                idx['ids'].setdefault(m[3], cp.stem)
     _save(ip, idx)
     for _, cp, st in sessions:                                    # re-render every record so the copies drop out
         agent, sid = cp.stem.split('_', 1)
@@ -389,7 +409,13 @@ def _apply(cfg, st, new):
     """Add this turn's messages to the record, honouring pause / resume. While paused, messages are held in the local
     cache only (never written to the repo), so "恢复记录并补上" can still add them after a false trigger."""
     held = st.setdefault('held', [])
-    for iso, role, text in new:
+    for iso, role, text, *rest in new:
+        mid, link = (list(rest) + [None, None])[:2]
+        if role == 'rollback':                                    # Codex: the last N turns were taken back
+            _withdraw_turns(st, int(text))
+            continue
+        if role == 'user' and link and link[0] != link[1]:        # Claude Code: this prompt hangs off an earlier point
+            _rewound(st, link[0])
         cmd = command(text) if role == 'user' else None
         if cmd == 'off' and not st.get('off'):
             st['off'] = True
@@ -410,6 +436,55 @@ def _apply(cfg, st, new):
             held.append([iso, role, text])
         else:
             _append(st['msgs'], [(iso, role, text)])
+            if link and mid:
+                st.setdefault('prompts', []).append([mid, iso])
+
+
+# ---------------------------------------------------------------- rewind
+# Claude Code keeps rewound messages in the transcript and hangs the new prompt off the point it went back to; Codex
+# writes a thread_rolled_back event with the number of turns. Either way the taken-back part stays in the record,
+# folded under a "withdrawn" line, the way summaries keep the verbatim text.
+def _withdraw(st, iso):
+    """Mark every row from the one starting at `iso` to the end as withdrawn."""
+    msgs = st['msgs']
+    i = next((k for k in range(len(msgs)) if msgs[k][0] >= iso), None)
+    if i is None:
+        return
+    a, b = msgs[i][0], msgs[-1][0]
+    st['withdrawn'] = [r for r in st.get('withdrawn') or [] if not (a <= r[0] and r[1] <= b)] + [[a, b]]
+    st['prompts'] = [p for p in st.get('prompts') or [] if p[1] < a]
+
+
+def _rewound(st, parent):
+    prompts = st.get('prompts') or []
+    if not prompts:
+        return
+    pos = {}
+    try:
+        with open(st['path'], 'rb') as f:
+            for i, line in enumerate(f):
+                try:
+                    u = json.loads(line).get('uuid')
+                except (ValueError, AttributeError):
+                    continue
+                if u:
+                    pos.setdefault(u, i)
+    except OSError:
+        return
+    at = pos.get(parent, -1) if parent else -1
+    gone = next((p for p in prompts if pos.get(p[0], -2) > at), None)
+    if gone:
+        _withdraw(st, gone[1])
+
+
+def _gone(st, iso):
+    return any(a <= iso <= b for a, b in st.get('withdrawn') or [])
+
+
+def _withdraw_turns(st, n):
+    users = [m for m in st['msgs'] if m[1] == 'user' and not _gone(st, m[0])]
+    if n > 0 and users:
+        _withdraw(st, users[-min(n, len(users))][0])
 
 
 def turn_notice(cfg, agent, data):
@@ -474,6 +549,8 @@ def _continue(cfg, st, me, owner, last_copied):
         _save(oc, ost)
     if not st.get('msgs'):                                        # first takeover, or after an index rebuild
         st['msgs'] = [list(m) for m in (ost.get('pre') or [])]
+        for k in ('prompts', 'withdrawn'):
+            st[k] = [list(x) for x in ost.get(k) or []]
     st['parent'] = st.get('chain_parent')
 
 
@@ -491,9 +568,9 @@ def update(cfg, agent, data, idx=None):
     st = _load(cf)
     if st.get('path') != tpath or os.path.getsize(tpath) < int(st.get('offset') or 0):
         st = {'path': tpath, 'offset': 0, 'msgs': [], 'file': st.get('file'), 'off': st.get('off')}
-    new, st['offset'] = _read(tpath, int(st.get('offset') or 0), PARSERS[agent])
+    new, st['offset'], st['tip'] = _read(tpath, int(st.get('offset') or 0), PARSERS[agent], st.get('tip'))
     me, own, copied = cf.stem, [], None
-    for iso, role, text, mid in new:
+    for iso, role, text, mid, link in new:
         owner = idx['ids'].get(mid) if mid else None
         if owner and owner != me:                                 # copied from an earlier session
             st['parent'] = owner                                 # the latest session it copied from
@@ -502,14 +579,14 @@ def update(cfg, agent, data, idx=None):
         if mid:
             idx['ids'][mid] = me
             st['last_mid'] = mid
-        own.append((iso, role, redact(cfg, text)))
-    if new and any(m[-1] for m in new):
+        own.append((iso, role, redact(cfg, text), mid, link))
+    if new and any(m[3] for m in new):
         _save(_index_path(cfg), idx)
     if st.get('forked_after'):                                    # this session's file was taken over; see _continue
         pre = [m for m in own if m[0] <= st['forked_after']]
         own = [m for m in own if m[0] > st['forked_after']]
         if pre:                                                   # only on an index rebuild: what the successor inherits
-            _append(st.setdefault('pre', []), pre)
+            _append(st.setdefault('pre', []), [m for m in pre if m[1] != 'rollback'])
     if st.get('continues') or (copied and not st.get('file')):
         _continue(cfg, st, me, st.get('continues') or copied[0], None if st.get('continues') else copied[1])
     if st.get('continued_by'):                                    # a branch of the session that took over its file
@@ -540,7 +617,7 @@ def update(cfg, agent, data, idx=None):
             otext = opath.read_text(encoding='utf-8') if opath.exists() else ''
             ohead = _head(cfg, agent, sid, st, msgs[:cut], _head_of(otext))
             ohead['next'] = f"{_dir(cfg)}/{nxt}"
-            _write(cfg, opath, _render(cfg, ohead, _summaries_of(otext), msgs[:cut], limit))
+            _write(cfg, opath, _render(cfg, ohead, _summaries_of(otext), msgs[:cut], limit, st.get('withdrawn')))
         st['prev_file'], st['file'] = st['file'], nxt
         st['msgs'] = msgs = msgs[cut:]
         st.pop('asked', None); st['asks'] = 0
@@ -554,7 +631,7 @@ def update(cfg, agent, data, idx=None):
         if not any(m[1] == 'agent' and tail[-200:] in m[2] for m in msgs[-3:]):
             now = dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z')
             shown = msgs + [[now, 'agent', tail, now]]
-    text = _render(cfg, head, _summaries_of(old), shown, limit)
+    text = _render(cfg, head, _summaries_of(old), shown, limit, st.get('withdrawn'))
     if text != old:
         _write(cfg, path, text)
     ask = _ask(cfg, st, head, msgs, limit, keep, data, path)

@@ -254,6 +254,44 @@ def run(cfg, keep=False):
     check('earlier session used again after a takeover: new file, the shared one untouched', '原会话又接着说' in lt
           and '原会话又接着说' not in pt2 and '恢复之后接着问' in pt2 and pf.name in lt, [p.name for p in later])
 
+    print('7c rewind (Claude Code: the new prompt hangs off an earlier point; Codex: thread_rolled_back)')
+    folded = lambda body, x: any(x in part.split('</details>')[0] for part in body.split('<details>')[1:])
+    rw = tmp / 'claude-rewind.jsonl'
+    jsonl(rw, [dict(cu('2026-01-07T00:00:00.000Z', '撤回测试第一问'), uuid='r1', parentUuid=None),
+               dict(ca('2026-01-07T00:00:05.000Z', tx('撤回测试第一答')), uuid='r2', parentUuid='r1'),
+               dict(cu('2026-01-07T00:01:00.000Z', '会被撤回的问题'), uuid='r3', parentUuid='r2'),
+               dict(ca('2026-01-07T00:01:05.000Z', tx('会被撤回的回答')), uuid='r4', parentUuid='r3')])
+    rstdin = json.dumps({'session_id': 'rewindclaude1', 'transcript_path': str(rw)})
+    ts(A, 'hook', 'claude', 'stop', stdin=rstdin)
+    jsonl(rw, [dict(cu('2026-01-07T00:02:00.000Z', '回退以后重新问'), uuid='r5', parentUuid='r2'),
+               dict(ca('2026-01-07T00:02:05.000Z', tx('回退以后的回答')), uuid='r6', parentUuid='r5')])
+    ts(A, 'hook', 'claude', 'stop', stdin=rstdin)
+    rf = next(iter((A / cdir).glob('*/*_claude_rewindcl*.md')), None)
+    rb = rf.read_text(encoding='utf-8') if rf else ''
+    check('Claude Code rewind: the taken-back turn is folded as withdrawn, kept verbatim; the rest as usual',
+          folded(rb, '会被撤回的问题') and folded(rb, '会被撤回的回答') and not folded(rb, '撤回测试第一答')
+          and not folded(rb, '回退以后重新问') and '回退以后的回答' in rb, rb[-200:].replace('\n', ' '))
+    jsonl(rw, [dict(cu('2026-01-07T00:03:00.000Z', '再接着问'), uuid='r7', parentUuid='r6'),
+               dict(ca('2026-01-07T00:03:05.000Z', tx('再接着答')), uuid='r8', parentUuid='r7')])
+    ts(A, 'hook', 'claude', 'stop', stdin=rstdin)
+    rb = rf.read_text(encoding='utf-8') if rf else ''
+    check('an ordinary turn after a rewind withdraws nothing more', rb.count('<details>') == 1 and not folded(rb, '再接着问'))
+    cr = tmp / 'rollout-2026-01-07T00-00-00-rewindcodex1.jsonl'
+    am = lambda when, text: {'timestamp': when, 'type': 'response_item', 'payload': {'type': 'message', 'role': 'assistant', 'content': [{'type': 'output_text', 'text': text}]}}
+    jsonl(cr, [{'timestamp': '2026-01-07T01:00:00.000Z', 'type': 'session_meta', 'payload': {'id': 'rewindcodex1'}},
+               um('2026-01-07T01:00:01.000Z', 'codex 第一问'), am('2026-01-07T01:00:02.000Z', 'codex 第一答'),
+               um('2026-01-07T01:01:01.000Z', 'codex 撤回的问'), am('2026-01-07T01:01:02.000Z', 'codex 撤回的答')])
+    cstdin = json.dumps({'session_id': 'rewindcodex1', 'transcript_path': str(cr)})
+    ts(A, 'hook', 'codex', 'stop', stdin=cstdin, env={'TEAM_SYNC_FOREGROUND': '1'})
+    jsonl(cr, [{'timestamp': '2026-01-07T01:02:00.000Z', 'type': 'event_msg', 'payload': {'type': 'thread_rolled_back', 'num_turns': 1}},
+               um('2026-01-07T01:02:01.000Z', 'codex 重新问'), am('2026-01-07T01:02:02.000Z', 'codex 重新答')])
+    ts(A, 'hook', 'codex', 'stop', stdin=cstdin, env={'TEAM_SYNC_FOREGROUND': '1'})
+    cf_ = next(iter((A / cdir).glob('*/*_codex_rewindco*.md')), None)
+    cb = cf_.read_text(encoding='utf-8') if cf_ else ''
+    check('Codex rollback: the last turn is folded as withdrawn, the new one recorded',
+          folded(cb, 'codex 撤回的问') and folded(cb, 'codex 撤回的答') and not folded(cb, 'codex 第一答') and 'codex 重新答' in cb
+          and not folded(cb, 'codex 重新问'), cb[-200:].replace('\n', ' '))
+
     print('8 journal: concurrent lines merge; auto line only at session end')
     C = tmp / 'carol'
     sh(tmp, 'git', 'clone', '-q', 'origin.git', 'carol')
