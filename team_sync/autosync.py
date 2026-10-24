@@ -56,7 +56,7 @@ def on(cfg):
     elif sysname == 'Windows':
         task = f'team-sync autosync {cfg.repo.name}'
         ps = (f"$a = New-ScheduledTaskAction -Execute '{py}' -Argument '{' '.join(chr(34) + a + chr(34) if ' ' in a else a for a in args)}' -WorkingDirectory '{repo}'; "
-              f"$tr = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Seconds {interval}) -RepetitionDuration ([TimeSpan]::MaxValue); "
+              f"$tr = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Seconds {interval}); "   # no -RepetitionDuration = indefinitely; [TimeSpan]::MaxValue is refused on Windows 10
               "$s = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 10) -MultipleInstances IgnoreNew -StartWhenAvailable; "
               f"Register-ScheduledTask -TaskName '{task}' -Action $a -Trigger $tr -Settings $s -Force | Out-Null")
         r = subprocess.run(['powershell', '-NoProfile', '-Command', ps], capture_output=True, text=True)

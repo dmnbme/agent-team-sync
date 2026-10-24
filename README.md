@@ -101,7 +101,7 @@ Codex 第一次打开项目时，要信任这个文件夹，再在「设置 → 
 依赖只有 git 和 Python 3.9 以上（macOS 自带的就够），不用安装任何第三方库。共享盘可以是任何会同步成本地文件夹的服务：Google Drive、OneDrive、Dropbox 能自动找到，其他的（坚果云、iCloud、NAS 等）在 `team-sync.json` 的 `drive.patterns` 里加一条路径规则，或在每台电脑的 `.env.team` 里写 `<前缀>_DRIVE_ROOT=路径`。
 
 ```bash
-git clone --branch v0.1.26 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # 成员:只需要 git
+git clone --branch v0.1.27 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # 成员:只需要 git
 pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.23"  # 维护者:得到 team-sync 命令
 ```
 
@@ -133,7 +133,7 @@ git add -A && git commit -m "team-sync" && git push
   "convo": { "dir": "docs/对话记录", "compact_chars": 30000, "keep_recent_chars": 8000, "keep_email_domains": ["acme.com"] },
   "inbox": { "dir": "docs/留言" },
   "notify": { "icon": "tools/notify-icon.png" },
-  "version": "0.1.26"
+  "version": "0.1.27"
 }
 ```
 
@@ -204,7 +204,8 @@ team-sync msg list                     自己发出和收到的留言、是否�
 - 一条留言一个文件：`<dir>/<收件人>/<时间>_<发件人>.md`，两个人同时写不会冲突。
 - 送达：对方开新对话时放在团队摘要最前面；对话进行中，每轮开始前再检查一次。每轮检查只读本地文件，不联网，不会拖慢对话；新留言靠每轮结束的同步和每 5 分钟的后台同步拉下来，所以最慢要等几分钟加上对方的下一条消息。
 - 送达后标记为已送达，这个标记随同步回到发件人那边，发件人下次开会话时摘要里会显示。
-- 桌面通知：同步拉到一条还没送达的新留言时，收件人的电脑会弹一条系统通知（谁留的言、开头一段）。点通知会打开这台电脑上最近一次跑 hook 的 agent 应用（Claude、Codex、终端或编辑器）。不开 agent 也会弹，因为后台同步不依赖 agent；每条只弹一次，弹通知不算送达。macOS 上通知由一个自动生成的小程序发出（`~/.team-sync/notify/team-sync.app`，不用安装任何东西），第一次要在系统弹窗里允许通知；换了图标会生成新的小程序，要再允许一次。
+- 桌面通知：同步拉到一条还没送达的新留言时，收件人的电脑会弹一条系统通知（谁留的言、开头一段）。点通知会打开这台电脑上最近一次跑 hook 的 agent 应用（Claude、Codex、终端或编辑器）。不开 agent 也会弹，因为后台同步不依赖 agent；每条只弹一次，弹通知不算送达。macOS 上通知由一个自动生成的小程序发出（`~/.team-sync/notify/team-sync.app`，不用安装任何东西），第一次要在系统弹窗里允许通知；换了图标会生成新的小程序，要再允许一次。Windows 上是系统原生通知，显示 team-sync 和图标，在当前用户的注册表里登记，不需要管理员；在弹窗或通知中心里点都能打开 agent，点一条消一条。
+- 代理：git 不认系统代理（Clash 等的「系统代理」开关），只认 `http.proxy` 和 `*_PROXY` 环境变量；从应用启动的 hook 和后台同步也拿不到终端里设的变量。所以没设代理变量时，team-sync 会把系统代理交给 git 和 gh；自己给 git 配了 `http.proxy` 的，以那个为准。PAC 自动配置读不到。
 - **留言只转告，不执行。** 注入的文字写明这是队友留言、不是用户本人的指令，agent 要先把原文告诉用户，用户同意后才照做。否则能往仓库推送的人就能操纵队友的 agent，本人也不知道它为什么突然去做某件事。这一条靠模型遵守，见上一节。
 
 ## 其他命令

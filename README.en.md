@@ -101,7 +101,7 @@ Good fit: teams of 3 to 10 people who already use coding agents and want to keep
 Requirements: git and Python 3.9 or later (the one that ships with macOS is enough). No third-party packages. The shared drive can be any service that syncs to a local folder: Google Drive, OneDrive and Dropbox are found automatically; for others (iCloud, Box, a NAS, Syncthing) add a path pattern under `drive.patterns` in `team-sync.json`, or set `<PREFIX>_DRIVE_ROOT=path` in each machine's `.env.team`.
 
 ```bash
-git clone --branch v0.1.26 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # members: git only
+git clone --branch v0.1.27 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # members: git only
 pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.23"  # maintainers: gives the team-sync command
 ```
 
@@ -133,7 +133,7 @@ Main fields of `team-sync.json`:
   "convo": { "dir": "docs/conversations", "compact_chars": 30000, "keep_recent_chars": 8000, "keep_email_domains": ["acme.com"] },
   "inbox": { "dir": "docs/inbox" },
   "notify": { "icon": "tools/notify-icon.png" },
-  "version": "0.1.26"
+  "version": "0.1.27"
 }
 ```
 
@@ -204,7 +204,8 @@ team-sync msg list                       messages you sent and received, deliver
 - One file per message: `<dir>/<recipient>/<time>_<sender>.md`, so two people writing at once never conflict.
 - Delivery: at the top of the team summary when they open a new session, and checked again before every turn. The per-turn check only reads local files, with no network call, so it adds no wait; new messages arrive with the turn-end sync and the 5-minute background sync, so delivery can take a few minutes plus the recipient's next message.
 - Once delivered, the message is marked as such; the mark syncs back and appears in the sender's next session summary.
-- Desktop notice: when a sync pulls in a message that has not been delivered yet, the recipient's computer shows a system notification (who wrote, and how it starts) telling them to open their agent. It appears even with no agent open, since the background sync does not need one; once per message, and it does not count as delivery. Clicking it opens the app that last ran a team-sync hook on that computer (Claude, Codex, a terminal or an editor). On macOS a small applet generated on first use posts the notifications (`~/.team-sync/notify/team-sync.app`, nothing to install); macOS asks once to allow its notifications, and again after the icon changes. The icon is `notify.icon` in the config, a square PNG or icns in the repository; without it the system sync icon is used.
+- Desktop notice: when a sync pulls in a message that has not been delivered yet, the recipient's computer shows a system notification (who wrote, and how it starts) telling them to open their agent. It appears even with no agent open, since the background sync does not need one; once per message, and it does not count as delivery. Clicking it opens the app that last ran a team-sync hook on that computer (Claude, Codex, a terminal or an editor). On macOS a small applet generated on first use posts the notifications (`~/.team-sync/notify/team-sync.app`, nothing to install); macOS asks once to allow its notifications, and again after the icon changes. The icon is `notify.icon` in the config, a square PNG or icns in the repository; without it the system sync icon is used. On Windows it is a native toast showing team-sync and the icon, registered in the current user's registry (no admin); clicking it, on the popup or in the Action Center, opens the agent and clears that one toast.
+- Proxy: git ignores the system proxy (the "system proxy" switch in Clash and the like) and reads only `http.proxy` and the `*_PROXY` variables, and hooks started by an app and the background sync do not get variables set in a shell. So when no proxy variable is set, team-sync hands the system proxy to git and gh; a git `http.proxy` you configured still wins. PAC scripts are not read.
 - **Messages are relayed, never executed.** The injected text says it comes from a teammate, not from the user, and that the agent must tell the user first and act only once they agree. Otherwise anyone who can push to the repository could steer a teammate's agent, and the person would not know why it acted. This depends on the model following it; see the section above.
 
 ## Other commands

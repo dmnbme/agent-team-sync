@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.27 (2026-10-25)
+
+Windows fixes from a first full run on Windows 10 (arm64 and x86-64, Python on both architectures).
+
+- The launcher no longer imports itself. `bin/team_sync.py` has the package's name, and Python puts the script's folder first on the path, so `import team_sync` found the launcher instead of the package. Every hook and the pre-commit gate failed with "team-sync is not installed" on a machine that had the package from pip only; machines with `~/.team-sync/pkg` were saved by the fallback. The launcher now drops its own folder from the path and looks in `$TEAM_SYNC_PKG`, then `~/.team-sync/pkg` (the copy `upgrade` moves), then the installed package. The launcher lives in each team repository: update `bin/team_sync.py` there from `resources/shim.py`.
+- `autosync on` works on Windows 10. The scheduled task asked for `RepetitionDuration [TimeSpan]::MaxValue`, which Windows 10 rejects as out of range; leaving the duration out repeats indefinitely.
+- Windows notifications are native toasts. They show as team-sync with the configured icon instead of a tray balloon with the system warning icon. The app identity is a per-user AppUserModelId in the registry (no shortcut, no admin). Clicking a toast, on the popup or later in the Action Center, opens the agent app and removes that one toast. A per-user COM activator does this (`~/.team-sync/notify/toast_activator.pyw`, standard library ctypes): it answers Windows' activation call, then starts the app. Windows PowerShell cannot subscribe to the toast's own click event, and toasts do not launch non-system URL protocols. Where toasts fail, the tray balloon is used as before.
+- The system proxy is handed to git. git reads only `http.proxy` and the `*_PROXY` variables, never the OS proxy setting, and hooks started by an app or by the autosync scheduler have no shell variables. When no proxy variable is set, team-sync now exports the system proxy for git and gh (what `urllib` reads: macOS network settings, the Windows registry). A git `http.proxy` you set still wins; PAC scripts are not read.
+- The pre-commit gate is written with `python.exe` when autosync runs under `pythonw.exe`. Before, a refused commit in a terminal showed no reason, and the hook was rewritten back and forth between the two.
+- The selftest leaves the real `~/.team-sync/notify` alone. Its hooks used to repoint which app a notification click opens. New checks: the launcher with only a pip install (11), the system proxy hand-over (12), and the real click target unchanged.
+
 ## 0.1.26 (2026-10-25)
 
 - Rewinds are recorded. Claude Code keeps rewound messages in the transcript and hangs the next prompt off the point the user went back to; Codex writes a `thread_rolled_back` event. team-sync read both as ordinary history, so a record showed the taken-back turns and the redone ones one after the other with nothing between them. Now the taken-back part is folded under a "withdrawn" line, verbatim, and the conversation goes on below it. Claude Code: a prompt whose `parentUuid` is not the entry just before it is checked against the transcript, and recorded turns after that point are withdrawn (in normal sessions this never fires). Codex: the last `num_turns` turns are withdrawn. Withdrawn state moves with a resumed session.

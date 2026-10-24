@@ -4,8 +4,7 @@ macOS: a tiny AppleScript applet, built once per user with osacompile (no instal
 show as "team-sync" rather than Script Editor. Clicking one launches the applet again; with nothing pending it opens the
 app that last ran a team-sync hook on this computer (Claude, Codex, a terminal, an editor), read from the
 __CFBundleIdentifier that macOS gives every process an app starts.
-Windows: a tray balloon; clicking it starts the executable of the app that last ran a hook (found once, by walking up
-the hook's parent processes). Linux: notify-send, no click action.
+Windows: a native toast as "team-sync" with the team icon (a tray balloon where toasts fail); clicking it starts the executable of the app that last ran a hook (found once, by walking up the hook's parent processes). Linux: notify-send, no click action.
 """
 import hashlib
 import json
@@ -13,6 +12,7 @@ import os
 import pathlib
 import platform
 import subprocess
+import sys
 
 HOME = pathlib.Path.home() / '.team-sync' / 'notify'
 APP = HOME / 'team-sync.app'
@@ -20,6 +20,9 @@ AGENT = HOME / 'agent'                   # macOS: bundle id; Windows: path of th
 KIND = HOME / 'agent_kind'
 PENDING = HOME / 'pending'
 BUNDLE_ID = 'com.agent-team-sync.notify'   # + a hash of the icon: Notification Center caches icons per bundle id
+TOAST_ID = 'AgentTeamSync.Notify'          # Windows: the AppUserModelId toasts are posted under
+TOAST_CLSID = '{6B1E2A54-0F3C-4D8E-9A71-3C5D7E2B9F10}'   # Windows: the toast's activator; a click runs OPENER
+OPENER = HOME / 'toast_activator.pyw'      # from resources/; COM runs it for a click
 
 # Run by the applet. With a pending file: post it (first line title, the rest body) and quit. Without: it was launched
 # by a click on one of its notifications, so open the agent app.
@@ -80,6 +83,8 @@ SKIP = {'python', 'python3', 'pythonw', 'py', 'cmd', 'powershell', 'pwsh', 'conh
 
 def remember_agent(kind):
     """Called from every hook: note which app this person runs their agent in. Cheap; writes only when it changes."""
+    if os.environ.get('TEAM_SYNC_NO_NOTIFY'):                   # selftest: its hooks must not repoint the real person's clicks
+        return
     try:
         HOME.mkdir(parents=True, exist_ok=True)
         sysname = platform.system()
@@ -155,13 +160,39 @@ def show(title, text, level='Warning', icon=None):
                 return
         subprocess.run(['osascript', '-e', f'display notification "{text}" with title "{title}"'], capture_output=True)
     elif sysname == 'Windows':
-        target = AGENT.read_text(encoding='utf-8').strip() if AGENT.exists() else ''
-        ps = ("Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; "
-              f"$n = New-Object System.Windows.Forms.NotifyIcon; $n.Icon = [System.Drawing.SystemIcons]::{level}; $n.Visible = $true; "
-              "$script:hit = $false; $n.add_BalloonTipClicked({ $script:hit = $true }); "
-              f"$n.ShowBalloonTip(10000, '{title}', '{text}', [System.Windows.Forms.ToolTipIcon]::{level}); "
-              "$t = Get-Date; while (((Get-Date) - $t).TotalSeconds -lt 12 -and -not $script:hit) { [System.Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 100 }; "
-              "$n.Dispose(); " + (f"if ($script:hit) {{ Start-Process '{target}' }}" if target else ''))
+        target = AGENT.read_text(encoding='utf-8').strip().lstrip('\ufeff') if AGENT.exists() else ''
+        png = icon if icon and icon.lower().endswith('.png') and os.path.exists(icon) else ''
+        esc = lambda x: x.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        logo = f'<image placement="appLogoOverride" src="{pathlib.Path(png).as_uri()}"/>' if png else ''
+        xml = f'<toast launch="open"><visual><binding template="ToastGeneric"><text>{esc(title)}</text><text>{esc(text)}</text>{logo}</binding></visual></toast>'
+        # A native toast under its own name and icon: a per-user AppUserModelId in the registry, no shortcut or admin.
+        # Its CustomActivator is a per-user COM server, OPENER: a click, on the popup or later in the Action Center, runs
+        # it; it answers the activation (so Windows removes that one toast) and starts the agent app. (Windows PowerShell
+        # cannot subscribe to the toast's Activated event, and toasts refuse protocol launches to non-system handlers.)
+        # Where toasts fail: a tray balloon.
+        HOME.mkdir(parents=True, exist_ok=True)
+        src = (pathlib.Path(__file__).parent / 'resources' / 'toast_activator.pyw').read_text(encoding='utf-8')
+        if not OPENER.exists() or OPENER.read_text(encoding='utf-8') != src:
+            OPENER.write_text(src, encoding='utf-8')
+        pyw = os.path.join(os.path.dirname(sys.executable), 'pythonw.exe')
+        server = f'"{pyw if os.path.exists(pyw) else sys.executable}" "{OPENER}"'      # COM appends -Embedding; ignored
+        toast = ("$ErrorActionPreference = 'Stop'; "
+                 f"$s = 'HKCU:/Software/Classes/CLSID/{TOAST_CLSID}/LocalServer32'; New-Item -Force $s | Out-Null; "
+                 f"Set-ItemProperty $s '(default)' '{server}'; "
+                 f"$k = 'HKCU:/Software/Classes/AppUserModelId/{TOAST_ID}'; New-Item -Force $k | Out-Null; "
+                 f"Set-ItemProperty $k DisplayName 'team-sync'; Set-ItemProperty $k CustomActivator '{TOAST_CLSID}'; " +
+                 (f"Set-ItemProperty $k IconUri '{png}'; " if png else '') +
+                 "[void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]; "
+                 "[void][Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime]; "
+                 f"$x = New-Object Windows.Data.Xml.Dom.XmlDocument; $x.LoadXml('{xml}'); "
+                 f"[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{TOAST_ID}').Show((New-Object Windows.UI.Notifications.ToastNotification $x)); ")
+        balloon = ("Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; "
+                   f"$b = New-Object System.Windows.Forms.NotifyIcon; $b.Icon = [System.Drawing.SystemIcons]::{level}; $b.Visible = $true; "
+                   "$script:hit = $false; $b.add_BalloonTipClicked({ $script:hit = $true }); "
+                   f"$b.ShowBalloonTip(10000, '{title}', '{text}', [System.Windows.Forms.ToolTipIcon]::{level}); "
+                   "$t = Get-Date; while (((Get-Date) - $t).TotalSeconds -lt 12 -and -not $script:hit) { [System.Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 100 }; "
+                   "$b.Dispose(); " + (f"if ($script:hit) {{ Start-Process '{target}' }}" if target else ''))
+        ps = f"try {{ {toast} }} catch {{ {balloon} }}"
         subprocess.Popen(['powershell', '-NoProfile', '-WindowStyle', 'Hidden', '-Command', ps], creationflags=0x08000000)
     elif sysname == 'Linux':
         subprocess.run(['notify-send', title, text], capture_output=True)

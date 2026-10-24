@@ -40,6 +40,8 @@ def jsonl(path, rows):
 
 
 def run(cfg, keep=False):
+    from .notifier import AGENT, KIND
+    real = [(f, f.read_bytes() if f.exists() else None) for f in (AGENT, KIND)]   # the person's own click target
     tmp = pathlib.Path(tempfile.mkdtemp(prefix='team-sync-selftest-'))
     print(f'temp dir {tmp}\n')
     sh(tmp, 'git', 'clone', '-q', '--bare', str(cfg.repo), 'origin.git')
@@ -357,12 +359,31 @@ def run(cfg, keep=False):
     print('10 commit identity from the GitHub login')
     fake = tmp / 'fakebin'; fake.mkdir()
     (fake / 'gh').write_text('#!/bin/sh\necho "selfuser 123"\n', encoding='utf-8'); (fake / 'gh').chmod(0o755)
+    (fake / 'gh.cmd').write_text('@echo selfuser 123\r\n', encoding='utf-8')            # Windows finds commands by PATHEXT
     sh(C, 'git', 'config', '--unset', 'user.email'); sh(C, 'git', 'config', '--unset', 'user.name')
     noglobal = {'GIT_CONFIG_GLOBAL': str(tmp / 'no-global-gitconfig'), 'PATH': f"{fake}{os.pathsep}{os.environ.get('PATH', '')}"}
     out = ts(C, 'start', env=noglobal)
     email = sh(C, 'git', 'config', 'user.email', env=noglobal)
     check('no e-mail configured: repo uses the GitHub login and noreply address', email == '123+selfuser@users.noreply.github.com'
           and sh(C, 'git', 'config', 'user.name', env=noglobal) == 'selfuser', email)
+
+    print('11 launcher bin/team_sync.py with only an installed package (no ~/.team-sync/pkg)')
+    shim = tmp / 'shimtest' / 'bin' / 'team_sync.py'; shim.parent.mkdir(parents=True)
+    shutil.copy2(pathlib.Path(__file__).parent / 'resources' / 'shim.py', shim)
+    home = tmp / 'shimtest' / 'home'; home.mkdir()
+    noenv = {k: v for k, v in CLEAN_ENV.items() if k != 'TEAM_SYNC_PKG'}
+    noenv.update(HOME=str(home), USERPROFILE=str(home), PYTHONPATH=str(pathlib.Path(__file__).parent.parent))
+    r = subprocess.run([sys.executable, str(shim), 'paths'], cwd=shim.parent, capture_output=True, text=True, encoding='utf-8', errors='replace', env=noenv)
+    check('the launcher finds the package, not itself', r.returncode == 0 and 'not installed' not in r.stderr, (r.stdout + r.stderr).strip()[:100])
+
+    print('12 system proxy handed to git')
+    from .netproxy import system_proxy_env
+    sysp = lambda: {'http': 'http://127.0.0.1:7890', 'https': 'http://127.0.0.1:7890'}
+    check('system proxy exported when no proxy variable is set', system_proxy_env({}, sysp) == {'HTTPS_PROXY': 'http://127.0.0.1:7890', 'HTTP_PROXY': 'http://127.0.0.1:7890', 'NO_PROXY': 'localhost,127.0.0.1,::1'})
+    check('a proxy variable the person set wins', system_proxy_env({'https_proxy': 'http://corp:8080'}, sysp) == {})
+    check('no system proxy: nothing added', system_proxy_env({}, lambda: {}) == {})
+
+    check("the real ~/.team-sync/notify click target is left alone", all((f.read_bytes() if f.exists() else None) == b for f, b in real))
 
     if keep:
         print(f'\nkept: {tmp}')

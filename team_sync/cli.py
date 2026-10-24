@@ -7,6 +7,11 @@ from .config import Config
 
 
 def main(argv=None):
+    try:
+        from .netproxy import apply
+        apply()                                                  # git ignores the OS proxy; hand it over (see netproxy.py)
+    except Exception:  # noqa: BLE001
+        pass
     ap = argparse.ArgumentParser(prog='team-sync', description='Keep a small team and their AI coding agents in sync: git + shared drive + Postgres leases.')
     ap.add_argument('--repo', help='repo root (default: found from cwd / CLAUDE_PROJECT_DIR / CODEBUDDY_PROJECT_DIR)')
     sub = ap.add_subparsers(dest='cmd')

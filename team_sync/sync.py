@@ -94,6 +94,8 @@ def ensure_hook(cfg):
     hook = cfg.repo / '.git' / 'hooks' / 'pre-commit'
     shim = cfg.repo / 'bin' / 'team_sync.py'
     py = sys.executable.replace('\\', '/')                       # the interpreter that has team_sync; git hooks run with an arbitrary PATH
+    if py.lower().endswith('/pythonw.exe') and os.path.exists(py[:-len('pythonw.exe')] + 'python.exe'):
+        py = py[:-len('pythonw.exe')] + 'python.exe'             # autosync runs pythonw: no console, the gate's message would vanish in a terminal commit
     entry = f'"$(git rev-parse --show-toplevel)/bin/team_sync.py"' if shim.exists() else '-m team_sync'
     want = f'#!/bin/sh\nPY="{py}"\n[ -x "$PY" ] && exec "$PY" {entry} gate\nexec python3 {entry} gate\n'
     if not hook.exists() or hook.read_text(encoding='utf-8', errors='replace') != want:
