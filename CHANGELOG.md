@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.28 (2026-10-25)
+
+- No more console windows flashing on Windows. The background sync runs under `pythonw` with no console, so every `git` it started (several per sync, every five minutes) opened a console window of its own. When team-sync has no console, it now starts its child processes with `CREATE_NO_WINDOW`, and their own children (git's helpers, the pre-commit hook) inherit the hidden console. Runs from a terminal are unchanged.
+
 ## 0.1.27 (2026-10-25)
 
 Windows fixes from a first full run on Windows 10 (arm64 and x86-64, Python on both architectures).

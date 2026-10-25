@@ -6,7 +6,28 @@ from . import __version__
 from .config import Config
 
 
+def _no_console_windows():
+    """Windows, started without a console (autosync runs pythonw; some agents run hooks hidden): every console program
+    started from here (git, gh, powershell) would get a console window of its own and flash on screen. Start them with
+    CREATE_NO_WINDOW instead; their own children inherit the hidden console."""
+    import ctypes
+    if ctypes.windll.kernel32.GetConsoleWindow():
+        return
+    init = subprocess.Popen.__init__
+
+    def hidden(self, *a, **kw):
+        if not kw.get('creationflags'):
+            kw['creationflags'] = 0x08000000                    # CREATE_NO_WINDOW
+        init(self, *a, **kw)
+    subprocess.Popen.__init__ = hidden
+
+
 def main(argv=None):
+    if sys.platform == 'win32':
+        try:
+            _no_console_windows()
+        except Exception:  # noqa: BLE001
+            pass
     try:
         from .netproxy import apply
         apply()                                                  # git ignores the OS proxy; hand it over (see netproxy.py)

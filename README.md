@@ -101,7 +101,7 @@ Codex 第一次打开项目时，要信任这个文件夹，再在「设置 → 
 依赖只有 git 和 Python 3.9 以上（macOS 自带的就够），不用安装任何第三方库。共享盘可以是任何会同步成本地文件夹的服务：Google Drive、OneDrive、Dropbox 能自动找到，其他的（坚果云、iCloud、NAS 等）在 `team-sync.json` 的 `drive.patterns` 里加一条路径规则，或在每台电脑的 `.env.team` 里写 `<前缀>_DRIVE_ROOT=路径`。
 
 ```bash
-git clone --branch v0.1.27 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # 成员:只需要 git
+git clone --branch v0.1.28 https://github.com/dmnbme/agent-team-sync ~/.team-sync/pkg   # 成员:只需要 git
 pip install --user "agent-team-sync @ git+https://github.com/dmnbme/agent-team-sync@v0.1.23"  # 维护者:得到 team-sync 命令
 ```
 
@@ -133,7 +133,7 @@ git add -A && git commit -m "team-sync" && git push
   "convo": { "dir": "docs/对话记录", "compact_chars": 30000, "keep_recent_chars": 8000, "keep_email_domains": ["acme.com"] },
   "inbox": { "dir": "docs/留言" },
   "notify": { "icon": "tools/notify-icon.png" },
-  "version": "0.1.27"
+  "version": "0.1.28"
 }
 ```
 
