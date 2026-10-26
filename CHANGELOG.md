@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.29 (2026-10-26)
 
 - Desktop notices for sync failures that last. Until now only a repeated pull conflict raised a notice; a push that kept failing (an expired GitHub login, lost access), a commit the secret gate kept blocking, or a pull failing for another reason only printed a line that nobody reads in the background sync, so a computer could stop syncing unnoticed. Each of these now raises one notice once it has lasted `sync.alert_after_min` (default 60) and one more when it clears. Being offline and a busy git lock are not counted; a push error that looks like the network is not counted either.
 
