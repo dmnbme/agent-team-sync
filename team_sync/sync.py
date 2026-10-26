@@ -90,6 +90,38 @@ def notify(cfg, text, title='team-sync', level='Warning'):
         pass
 
 
+# Failures that persist are worth a notice; one-off failures are not (a laptop on the move, a brief outage). The first
+# failure is remembered, a notice goes out once it has lasted sync.alert_after_min, and one more when it clears.
+NETWORK = ('could not resolve', 'failed to connect', 'timed out', 'connection reset', 'connection refused',
+           'network is unreachable', 'connection was reset', 'ssl_connect', 'proxy')
+
+
+def trouble(cfg, kind, ok, detail=''):
+    f = state(cfg, f'trouble_{kind}.json')
+    try:
+        cur = json.loads(f.read_text(encoding='utf-8')) if f.exists() else None
+    except (OSError, ValueError):
+        cur = None
+    now = dt.datetime.now()
+    if ok:
+        if cur is not None:
+            f.unlink()
+            if cur.get('alerted'):
+                notify(cfg, t(cfg.lang, 'trouble_cleared', what=t(cfg.lang, f'trouble_{kind}_what'), since=cur['first']),
+                       title=t(cfg.lang, 'trouble_cleared_title'), level='Information')
+        return
+    if cur is None:
+        cur = {'first': f'{now:%Y-%m-%d %H:%M}', 'alerted': False}
+    cur['detail'] = detail[:300]
+    first = dt.datetime.strptime(cur['first'], '%Y-%m-%d %H:%M')
+    after = float(cfg.data['sync'].get('alert_after_min', 60))
+    if not cur['alerted'] and (now - first).total_seconds() >= after * 60:
+        notify(cfg, t(cfg.lang, f'trouble_{kind}', since=cur['first'], detail=' '.join(detail.split())[:120]),
+               title=t(cfg.lang, 'trouble_title'))
+        cur['alerted'] = True
+    f.write_text(json.dumps(cur, ensure_ascii=False), encoding='utf-8')
+
+
 def ensure_hook(cfg):
     hook = cfg.repo / '.git' / 'hooks' / 'pre-commit'
     shim = cfg.repo / 'bin' / 'team_sync.py'
@@ -168,6 +200,7 @@ def pull(cfg, _retry=True):
     else:                                                       # no upstream set: let pull pick the branch
         r = git(cfg, 'pull', '--rebase', '--autostash', '--quiet')
     if r.returncode == 0:
+        trouble(cfg, 'pull', True)
         if marker.exists():                                     # an earlier conflict cleared by itself: say so once, at the next start
             state(cfg, 'conflict_resolved.txt').write_text(
                 marker.read_text(encoding='utf-8').splitlines()[0] + '\n' + f'{dt.datetime.now():%Y-%m-%d %H:%M}\n', encoding='utf-8')
@@ -185,6 +218,7 @@ def pull(cfg, _retry=True):
             time.sleep(3); return pull(cfg, _retry=False)
         return '⚠ ' + t(cfg.lang, 'git_busy')
     if not started:
+        trouble(cfg, 'pull', False, out)
         return '⚠ ' + out[:300]                                 # failed before any rebase started: nothing to undo, not a conflict
     raw = out.splitlines()
     gist = [l for l in raw if 'CONFLICT' in l or 'could not apply' in l or l.startswith('error:')][:3] or raw[:2]
@@ -390,8 +424,10 @@ def _commit_push(cfg, staged):
         r = git(cfg, 'commit', '-q', '-m', f'sync({cfg.who()}): {dt.datetime.now():%Y-%m-%d %H:%M} · {len(staged)} files')
         if r.returncode != 0:
             print(t(cfg.lang, 'commit_blocked') + '\n' + (r.stdout + r.stderr).strip()[:800])
-            git(cfg, 'reset', '-q'); return
+            git(cfg, 'reset', '-q')
+            trouble(cfg, 'commit', False, (r.stdout + r.stderr).strip()); return
         print(t(cfg.lang, 'committed', n=len(staged)))
+    trouble(cfg, 'commit', True)
     if git(cfg, 'remote', 'get-url', 'origin').returncode == 0:
         msg = pull(cfg)
         if msg.startswith('⚠'):
@@ -399,7 +435,12 @@ def _commit_push(cfg, staged):
         from .inbox import alert                                # turn-end and autosync runs: a desktop notice for new messages
         alert(cfg)
         p = _net(cfg, 'push', '--quiet')
-        print(t(cfg.lang, 'pushed') if p.returncode == 0 else t(cfg.lang, 'push_failed', err=(p.stderr or p.stdout).strip()[:300]))
+        err = (p.stderr or p.stdout).strip()
+        print(t(cfg.lang, 'pushed') if p.returncode == 0 else t(cfg.lang, 'push_failed', err=err[:300]))
+        if p.returncode == 0:
+            trouble(cfg, 'push', True)
+        elif not any(k in err.lower() for k in NETWORK):        # offline is not a failure worth a notice
+            trouble(cfg, 'push', False, err)
     if cfg.get('TEAM_KEY'):
         try:
             from .leases import list_active

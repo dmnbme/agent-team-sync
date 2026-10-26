@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Desktop notices for sync failures that last. Until now only a repeated pull conflict raised a notice; a push that kept failing (an expired GitHub login, lost access), a commit the secret gate kept blocking, or a pull failing for another reason only printed a line that nobody reads in the background sync, so a computer could stop syncing unnoticed. Each of these now raises one notice once it has lasted `sync.alert_after_min` (default 60) and one more when it clears. Being offline and a busy git lock are not counted; a push error that looks like the network is not counted either.
+
 ## 0.1.28 (2026-10-25)
 
 - No more console windows flashing on Windows. The background sync runs under `pythonw` with no console, so every `git` it started (several per sync, every five minutes) opened a console window of its own. When team-sync has no console, it now starts its child processes with `CREATE_NO_WINDOW`, and their own children (git's helpers, the pre-commit hook) inherit the hidden console. Runs from a terminal are unchanged.

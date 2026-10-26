@@ -1,6 +1,7 @@
 """Two-clone simulation in a temp dir: proves sync, conflict handling, leases (if configured), the Antigravity, Codex and
 Claude Code hooks, and conversation records.
 Never touches the real origin. `team-sync selftest [--keep]`"""
+import datetime
 import json
 import pathlib
 import re
@@ -382,6 +383,31 @@ def run(cfg, keep=False):
     check('system proxy exported when no proxy variable is set', system_proxy_env({}, sysp) == {'HTTPS_PROXY': 'http://127.0.0.1:7890', 'HTTP_PROXY': 'http://127.0.0.1:7890', 'NO_PROXY': 'localhost,127.0.0.1,::1'})
     check('a proxy variable the person set wins', system_proxy_env({'https_proxy': 'http://corp:8080'}, sysp) == {})
     check('no system proxy: nothing added', system_proxy_env({}, lambda: {}) == {})
+
+    print('13 notices for failures that last (in-process, nothing shown)')
+    from . import sync as sync_mod
+    from .config import Config
+    shown = []
+    saved = (sync_mod.notify, os.environ.get('TEAM_SYNC_NO_NOTIFY'))
+    os.environ['TEAM_SYNC_NO_NOTIFY'] = '1'
+    sync_mod.notify = lambda cfg, text, title='team-sync', level='Warning': shown.append((title, text))
+    try:
+        ca = Config(A)
+        sync_mod.trouble(ca, 'push', False, 'remote: Permission denied')
+        check('first push failure: no notice yet', not shown)
+        f = ca.state_dir / 'trouble_push.json'; cur = json.loads(f.read_text(encoding='utf-8'))
+        cur['first'] = (datetime.datetime.now() - datetime.timedelta(hours=2)).strftime('%Y-%m-%d %H:%M'); f.write_text(json.dumps(cur), encoding='utf-8')
+        sync_mod.trouble(ca, 'push', False, 'remote: Permission denied'); sync_mod.trouble(ca, 'push', False, 'again')
+        check('failure lasting past alert_after_min: one notice', len(shown) == 1, str(shown)[:100])
+        sync_mod.trouble(ca, 'push', True)
+        check('cleared: one more notice and the state is gone', len(shown) == 2 and not f.exists())
+        sync_mod.trouble(ca, 'commit', False, 'x'); sync_mod.trouble(ca, 'commit', True)
+        check('a failure that clears before the threshold says nothing', len(shown) == 2)
+
+    finally:
+        sync_mod.notify = saved[0]
+        if saved[1] is None:
+            os.environ.pop('TEAM_SYNC_NO_NOTIFY', None)
 
     check("the real ~/.team-sync/notify click target is left alone", all((f.read_bytes() if f.exists() else None) == b for f, b in real))
 

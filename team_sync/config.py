@@ -23,7 +23,8 @@ DEFAULTS = {
     'journal': 'docs/journal.md',
     'fingerprint': {'root': '', 'manifest': 'data_manifest.json'},
     'drive': {'root_name': '', 'marker': '', 'patterns': []},
-    'sync': {'autosync_interval_sec': 300, 'log_commits': 12, 'journal_tail': 8, 'inject_ttl_hours': 6},
+    'sync': {'autosync_interval_sec': 300, 'log_commits': 12, 'journal_tail': 8, 'inject_ttl_hours': 6,
+             'alert_after_min': 60},                                                    # a failure lasting this long gets a notice
     'convo': {'dir': '', 'compact_chars': 30000, 'keep_recent_chars': 8000, 'keep_email_domains': []},   # dir set = records on
     'inbox': {'dir': ''},                                                                                # dir set = messages on
     'notify': {'icon': ''},                                                                             # repo path of a square .png/.icns for desktop notices

@@ -108,6 +108,13 @@ _T = {
         'inbox_state_read': 'delivered {at}',
         'inbox_state_unread': 'not delivered',
         'identity_set': '✓ Git commits from this repo now use your GitHub account ({login}), so they show your name and avatar.',
+        'trouble_title': 'team-sync: sync is failing',
+        'trouble_push': 'Pushing has failed since {since}, so teammates do not see your changes. Your work is kept locally. Error: {detail}',
+        'trouble_commit': 'Committing has been blocked since {since} (usually the secret gate), so nothing from this computer is synced. Error: {detail}',
+        'trouble_pull': 'Pulling has failed since {since} (not a conflict, not the network), so you do not get teammates\' changes. Error: {detail}',
+        'trouble_push_what': 'Pushing', 'trouble_commit_what': 'Committing', 'trouble_pull_what': 'Pulling',
+        'trouble_cleared_title': 'team-sync: sync works again',
+        'trouble_cleared': '{what} works again (failing since {since}).',
     },
     'zh': {
         'header': '## 团队同步 · {holder} · {now}',
@@ -216,6 +223,13 @@ _T = {
         'inbox_state_read': '{at} 已送达',
         'inbox_state_unread': '未送达',
         'identity_set': '✓ 这个仓库的提交已改用你的 GitHub 账号({login}),以后提交会显示你的用户名和头像。',
+        'trouble_title': 'team-sync:同步一直失败',
+        'trouble_push': '从 {since} 起推送一直失败,队友看不到你的改动;本地改动都在。错误:{detail}',
+        'trouble_commit': '从 {since} 起提交一直被拦(多半是密钥门禁),这台电脑的改动都没同步出去。错误:{detail}',
+        'trouble_pull': '从 {since} 起拉取一直失败(不是冲突,也不是网络),你收不到队友的改动。错误:{detail}',
+        'trouble_push_what': '推送', 'trouble_commit_what': '提交', 'trouble_pull_what': '拉取',
+        'trouble_cleared_title': 'team-sync:同步已恢复',
+        'trouble_cleared': '{what}已恢复正常(从 {since} 起失败过)。',
     },
 }
 
