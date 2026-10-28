@@ -195,8 +195,8 @@ Add `"convo": {"dir": "docs/conversations"}` to `team-sync.json` to turn them on
 Turn them on with `"inbox": {"dir": "docs/inbox"}` in `team-sync.json`.
 
 ```
-team-sync msg send yulu "The pricing copy is done, see docs/pricing.md when you can"
-team-sync msg send yulu,hanyu "..."      several recipients, comma-separated
+team-sync msg send bob "The pricing copy is done, see docs/pricing.md when you can"
+team-sync msg send bob,carol "..."       several recipients, comma-separated
 team-sync msg list                       messages you sent and received, delivered or not
 ```
 
@@ -230,7 +230,7 @@ team-sync paths | status | version
 
 ## Background
 
-The tool comes from daily use in a three-person team: Claude Code, Codex and Antigravity on macOS and Windows, two members who do not use git, and a shared question bank, website and shared drive.
+The tool comes from daily use in a three-person team: Claude Code, Codex and Antigravity on macOS and Windows, two members who do not use git, and a shared dataset, website and shared drive.
 
 ## License
 

@@ -195,8 +195,8 @@ team-sync lease release collect:telegram:main [--force]
 在 `team-sync.json` 里写上 `"inbox": {"dir": "docs/留言"}` 即开启。
 
 ```
-team-sync msg send yulu "首页文案改好了，有空看一下 docs/知识/网站现状.md"
-team-sync msg send yulu,hanyu "……"     多人用逗号隔开
+team-sync msg send bob "首页文案改好了，有空看一下 docs/pricing.md"
+team-sync msg send bob,carol "……"      多人用逗号隔开
 team-sync msg list                     自己发出和收到的留言、是否已送达
 ```
 
@@ -230,7 +230,7 @@ team-sync paths | status | version
 
 ## 背景
 
-这个工具来自一个三人团队的日常使用：三个人分别在 Mac 和 Windows 上用 Claude Code、Codex 和 Antigravity，两个人不用 git，共同维护一个题库、一个网站和一个共享盘。
+这个工具来自一个三人团队的日常使用：三个人分别在 Mac 和 Windows 上用 Claude Code、Codex 和 Antigravity，两个人不用 git，共同维护一套数据、一个网站和一个共享盘。
 
 ## 许可
 

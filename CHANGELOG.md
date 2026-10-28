@@ -113,7 +113,7 @@ Windows fixes from a first full run on Windows 10 (arm64 and x86-64, Python on b
 ## 0.1.7 (2026-10-17)
 
 - Codex support. `team-sync init` now writes `.codex/hooks.json`: SessionStart returns the team summary as `additionalContext`, and Stop runs `stop` in the background after each turn (`async: true`). New adapter `team-sync hook codex session_start|stop`. SessionEnd is not used because Codex caps it at 3 s, too short for pull + push; the background autosync covers edits made after the last turn. Codex asks once to trust the project and once per hook (`/hooks`), and again whenever the hook file changes.
-- The automatic journal line lists non-ASCII paths as they are (`题库/pipeline/x.py`), not as git's octal escapes.
+- The automatic journal line lists non-ASCII paths as they are (`资料/脚本/x.py`), not as git's octal escapes.
 - selftest covers the Codex hook (summary JSON, commit + push from Stop).
 
 ## 0.1.6 (2026-09-28)
