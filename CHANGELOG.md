@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.31 (2026-10-31)
+
+- Codex app attachments are placed. The Codex desktop app does not @-mention attached files; it puts a list ahead of the message ("# Files mentioned by the user:", one "## name: path" per file, "Image attachment: true" under images, then "## My request:"), so 0.1.30 left the whole list, with one machine's paths, in the record. The list is now read like @-mentions: files are placed (repository path, `Drive:<drive>/…`, or name only, with a note asked for outside files), an image already sent with the message is shown once, and the boilerplate is dropped. The IDE extension's context (active file, open tabs) is dropped too: the user did not mention those.
+- A record's title and first line no longer show a mentioned file's full path, only its name.
+- `team-sync convo backfill` also cleans old Codex records: the attachment list and the `<image>` wrappers go, the same as a new record.
+
 ## 0.1.30 (2026-10-31)
 
 - Pasted images are kept. Conversation records showed every image the user pasted as "[image]", so a teammate's agent could not tell what a screenshot was about. Images (Claude Code base64 blocks, Codex data URLs, with Codex's `<image name=…>` wrapper dropped) are now saved once, named by content hash, under the shared drive's attachments folder (`convo.attachments_dir`, by month), and the record shows the drive path. Without the drive mounted, the image waits in a local queue and moves there on a later turn; images pasted while recording is paused are not saved. Without a shared drive configured, the record still shows "[image]".

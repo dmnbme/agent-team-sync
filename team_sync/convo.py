@@ -47,6 +47,9 @@ ASK_AGAIN_SEC, MAX_ASKS = 600, 3
 IMG_TOKEN = re.compile(r'⟦img:([^⟧]+)⟧')                         # in cached text: ⟦img:YYYY-MM/<hash>.<ext>⟧
 IMG_EXT = {'image/png': 'png', 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif'}
 CODEX_IMG_WRAP = re.compile(r'^\s*(<image name=[^>]*>|</image>)\s*$')   # Codex wraps each pasted image in these two texts
+CODEX_PREAMBLE = ('# Files mentioned by the user:', '# Context from my IDE setup:')   # Codex app / IDE extension
+CODEX_REQUEST = re.compile(r'^## My request(?: for Codex)?:[ \t]*$', re.M)
+CODEX_MENTION = re.compile(r'^## (.+?): (.+?)[ \t]*\n(Image attachment: true)?', re.M)
 FILE_REF = re.compile(r'@"([^"\n]+)"|@((?:/|~/|[A-Za-z]:\\)[^\s"`\'，。、；：）)]+)')   # @"/a b/c.md" or @/a/c.md
 NOTE_KEY = re.compile(r'^(img:[0-9a-f]{16}\.[a-z]{3,4}|file:[0-9a-f]{10})$')
 MAX_NOTE_ASKS = 2
@@ -156,6 +159,25 @@ def _claude(d):
     return []
 
 
+def _codex_mentions(s):
+    """Codex app and IDE extension put attachments in a preamble, not as @-mentions:
+        # Files mentioned by the user:\n\n## a.pdf: /abs/a.pdf\n\n## b.png: /abs/b.png\nImage attachment: true\n\n…\n## My request:\n<text>
+    → '@"/abs/a.pdf"\n\n<text>'. Image lines are dropped when the image itself came with the message; the IDE context
+    (active file, open tabs) is not something the user mentioned and is dropped too."""
+    if not s.startswith(CODEX_PREAMBLE):
+        return s
+    asks = list(CODEX_REQUEST.finditer(s))
+    if not asks:
+        return s
+    head, body = s[:asks[-1].start()], s[asks[-1].end():].strip()
+    files = head.split('# Context from my IDE setup:', 1)[0]
+    found = list(CODEX_MENTION.finditer(files))
+    imgs = sum(1 for m in found if m.group(3))
+    keep_imgs = len(IMG_TOKEN.findall(body)) < imgs           # pictures not in the message: keep their paths
+    refs = [f'@"{m.group(2)}"' for m in found if keep_imgs or not m.group(3)]
+    return '\n'.join(refs) + ('\n\n' if refs and body else '') + body
+
+
 def _codex(d):
     p = d.get('payload') or {}
     if d.get('type') == 'event_msg' and p.get('type') == 'thread_rolled_back':   # the user stepped back N turns
@@ -164,7 +186,7 @@ def _codex(d):
         return []
     ts = d.get('timestamp') or ''
     if p['role'] == 'user':                                       # AGENTS.md, environment context, hook context: skipped
-        s = _user_text(p.get('content'))
+        s = _codex_mentions(_user_text(p.get('content')))
         return [(ts, 'user', s)] if s else []
     s = _text(p.get('content')).strip()
     return [(ts, 'agent', s)] if s else []
@@ -655,7 +677,8 @@ def turn_notice(cfg, agent, data):
 def _head(cfg, agent, sid, st, msgs, prev):
     first_user = next((m[2] for m in msgs if m[1] == 'user'), '')
     first_user = IMG_TOKEN.sub(t(cfg.lang, 'convo_image_short'), first_user)
-    head = {'session': sid, 'agent': agent, 'who': cfg.who(), 'title': re.sub(r'\s+', ' ', first_user)[:60] or prev.get('title', ''),
+    first_user = FILE_REF.sub(lambda m: (m.group(1) or m.group(2)).replace('\\', '/').rstrip('/').rsplit('/', 1)[-1], first_user)
+    head ={'session': sid, 'agent': agent, 'who': cfg.who(), 'title': re.sub(r'\s+', ' ', first_user)[:60] or prev.get('title', ''),
             'start': msgs[0][0], 'last': msgs[-1][3], 'through': prev.get('through') or ''}
     if prev.get('summarized'):                                    # summarized up to here; the verbatim text stays (0.1.25+)
         head['summarized'] = prev['summarized']
@@ -973,7 +996,13 @@ def backfill(cfg):
                         rel = todo.pop(0)
                         _save_image(cfg, rel, drive)
                         return f'⟦img:{rel}⟧'
-                    block = _show(cfg, notes, re.sub(r'\[image\]', put, block), 'user', place)
+                    block = re.sub(r'\[image\]', put, block)
+                    if agent == 'codex':                          # old Codex records kept the attachment preamble and <image> wrappers
+                        mb = re.match(r'(<!-- msg \S+ user -->\n\*\*[^\n]*\*\*\n\n)(.*?)(\s*)$', block, re.S)
+                        if mb:
+                            body = '\n'.join(x for x in mb.group(2).split('\n') if not CODEX_IMG_WRAP.match(x))
+                            block = mb.group(1) + _codex_mentions(body) + mb.group(3)
+                    block = _show(cfg, notes, block, 'user', place)
                 out.append(block)
             new = ''.join(out)
             if new != s:
