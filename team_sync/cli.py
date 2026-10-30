@@ -49,6 +49,9 @@ def main(argv=None):
     cv = sub.add_parser('convo', help='conversation records'); cvs = cv.add_subparsers(dest='op', required=True)
     x = cvs.add_parser('compact', help='fold older messages into the summary (the turn-end hook asks the agent to run this); summary on stdin')
     x.add_argument('--file', required=True); x.add_argument('--through', required=True); x.add_argument('--summary-file')
+    x = cvs.add_parser('note', help="notes on images / outside files ('<key> <note>' per line on stdin; the turn-end hook asks the agent to run this)")
+    x.add_argument('--file', required=True); x.add_argument('--notes-file')
+    cvs.add_parser('backfill', help='put pasted images back into records written before 0.1.30 (and place @-mentioned paths)')
     cvs.add_parser('list', help='recent records')
     l = sub.add_parser('lease', help='leases'); ls = l.add_subparsers(dest='op', required=True)
     for op in ('acquire', 'renew', 'release'):
@@ -100,6 +103,10 @@ def main(argv=None):
             from . import convo
             if ns.op == 'list':
                 print(convo.recent(cfg, 20) or '(none)'); return 0
+            if ns.op == 'backfill':
+                return convo.backfill(cfg)
+            if ns.op == 'note':
+                return convo.note(cfg, ns.file, open(ns.notes_file, encoding='utf-8').read() if ns.notes_file else sys.stdin.read())
             text = open(ns.summary_file, encoding='utf-8').read() if ns.summary_file else sys.stdin.read()
             return convo.compact(cfg, ns.file, ns.through, text)
         if ns.cmd == 'msg':

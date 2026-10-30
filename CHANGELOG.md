@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.30 (2026-10-31)
+
+- Pasted images are kept. Conversation records showed every image the user pasted as "[image]", so a teammate's agent could not tell what a screenshot was about. Images (Claude Code base64 blocks, Codex data URLs, with Codex's `<image name=…>` wrapper dropped) are now saved once, named by content hash, under the shared drive's attachments folder (`convo.attachments_dir`, by month), and the record shows the drive path. Without the drive mounted, the image waits in a local queue and moves there on a later turn; images pasted while recording is paused are not saved. Without a shared drive configured, the record still shows "[image]".
+- @-mentioned files are placed. Files are not copied: a file in the repository is shown by its relative path, a file on the shared drive as `Drive:<drive>/…`, and anything else by its name only, so one machine's folder layout no longer lands in the team's records.
+- Notes on attachments. At the end of a turn the hook asks the running agent, the same way it asks for summaries, for one line on each new image and each outside file: what it shows or is, and how it bears on the work. `team-sync convo note` writes the lines next to the attachments (kept in the record's header, so they survive re-rendering). Asked twice at most.
+- `team-sync convo backfill` puts images back into older records: each "[image]" is matched by message time against the local transcript and replaced, and mentioned paths are placed; headers, summaries and everything else stay as written.
+
 ## 0.1.29 (2026-10-26)
 
 - Desktop notices for sync failures that last. Until now only a repeated pull conflict raised a notice; a push that kept failing (an expired GitHub login, lost access), a commit the secret gate kept blocking, or a pull failing for another reason only printed a line that nobody reads in the background sync, so a computer could stop syncing unnoticed. Each of these now raises one notice once it has lasted `sync.alert_after_min` (default 60) and one more when it clears. Being offline and a busy git lock are not counted; a push error that looks like the network is not counted either.

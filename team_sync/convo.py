@@ -8,9 +8,18 @@ verbatim part passes `compact_chars`, the hook asks the running agent to summari
 
 Opt-outs: a user message containing one of NO_RECORD drops that session's record; TEAM_SYNC_NO_CONVO=1 in the
 environment, or <PREFIX>_CONVO=off in the env file, turns recording off on that machine.
+
+Attachments: images the user pastes are saved once (named by content hash) under the shared drive's attachments folder
+(`convo.attachments_dir`, by month) and the record shows where; without a shared drive they stay "[image]". Files the
+user @-mentions are shown repo-relative, drive-relative, or, anywhere else, by file name only. The turn-end hook asks the
+running agent for a one-line note on each new image and each such outside file (what it is and how it bears on the
+work), which `team-sync convo note` writes next to the reference.
 """
+import base64
+import binascii
 import datetime as dt
 import glob
+import hashlib
 import itertools
 import json
 import os
@@ -35,6 +44,13 @@ SKIP_PREFIX = ('<', '[Request interrupted', 'This session is being continued', '
                '[team-sync hook', '[团队同步 hook')
 MERGE_GAP_SEC = 1800            # consecutive agent texts closer than this are one turn, shown as one block
 ASK_AGAIN_SEC, MAX_ASKS = 600, 3
+IMG_TOKEN = re.compile(r'⟦img:([^⟧]+)⟧')                         # in cached text: ⟦img:YYYY-MM/<hash>.<ext>⟧
+IMG_EXT = {'image/png': 'png', 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif'}
+CODEX_IMG_WRAP = re.compile(r'^\s*(<image name=[^>]*>|</image>)\s*$')   # Codex wraps each pasted image in these two texts
+FILE_REF = re.compile(r'@"([^"\n]+)"|@((?:/|~/|[A-Za-z]:\\)[^\s"`\'，。、；：）)]+)')   # @"/a b/c.md" or @/a/c.md
+NOTE_KEY = re.compile(r'^(img:[0-9a-f]{16}\.[a-z]{3,4}|file:[0-9a-f]{10})$')
+MAX_NOTE_ASKS = 2
+_IMGS = {}                      # <hash>.<ext> -> base64 data, filled while a transcript is parsed
 
 
 # ---------------------------------------------------------------- config
@@ -63,15 +79,33 @@ def redact(cfg, text):
 
 
 # ---------------------------------------------------------------- transcript parsers: one JSON object in, [(iso, role, text)] out
+def _image_token(b):
+    """An image block (Claude Code base64 source, Codex data: URL) → ⟦img:<hash>.<ext>⟧, its data kept in _IMGS."""
+    src = b.get('source') if isinstance(b.get('source'), dict) else {}
+    data, mtype = src.get('data'), src.get('media_type')
+    url = b.get('image_url')
+    url = url.get('url') if isinstance(url, dict) else url
+    if not data and isinstance(url, str) and url.startswith('data:'):
+        head, _, data = url.partition(',')
+        mtype = head[5:].split(';')[0]
+    ext = IMG_EXT.get((mtype or '').lower())
+    if not data or not ext:
+        return None
+    name = f"{hashlib.sha1(data.encode()).hexdigest()[:16]}.{ext}"
+    _IMGS[name] = data
+    return f'⟦img:{name}⟧'
+
+
 def _text(content):
     if isinstance(content, str):
         return content
     out = []
     for b in content or []:
         if isinstance(b, dict) and b.get('type') in ('text', 'input_text', 'output_text'):
-            out.append(b.get('text') or '')
+            if not CODEX_IMG_WRAP.match(b.get('text') or ''):
+                out.append(b.get('text') or '')
         elif isinstance(b, dict) and b.get('type') in ('image', 'input_image'):
-            out.append('[image]')
+            out.append(_image_token(b) or '[image]')
     return '\n'.join(out)
 
 
@@ -279,6 +313,116 @@ def _save(p, st):
         pass
 
 
+# ---------------------------------------------------------------- attachments
+def _att_dir(cfg):
+    return ((cfg.data.get('convo') or {}).get('attachments_dir') or t(cfg.lang, 'convo_att_dir')).strip('/')
+
+
+def _drive_name(cfg):
+    return ((cfg.data.get('drive') or {}).get('root_name') or '').strip('/')
+
+
+def _save_image(cfg, rel, drive):
+    """Write one pasted image under <drive>/<attachments>/<rel>; without the drive mounted, into a local queue that
+    _flush_pending moves there later. Same content, same name: saved once however often it is pasted."""
+    data = _IMGS.get(rel.rsplit('/', 1)[-1])
+    if data is None:
+        return
+    p = (drive / _att_dir(cfg) if drive else cfg.state_dir / 'convo' / 'pending') / rel
+    if p.exists():
+        return
+    try:
+        raw = base64.b64decode(data)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(raw)
+    except (OSError, ValueError, binascii.Error):
+        pass
+
+
+def _flush_pending(cfg, drive):
+    q = cfg.state_dir / 'convo' / 'pending'
+    if not drive or not q.is_dir():
+        return
+    for p in sorted(q.rglob('*')):
+        if not p.is_file():
+            continue
+        dest = drive / _att_dir(cfg) / p.relative_to(q)
+        try:
+            if not dest.exists():
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(p.read_bytes())
+            p.unlink()
+        except OSError:
+            pass
+
+
+def _keep_images(cfg, text, iso):
+    """Give each new image token its month folder (saving happens once the message is known not to be paused).
+    Without a shared drive configured: '[image]'."""
+    if not _drive_name(cfg):
+        return IMG_TOKEN.sub('[image]', text)
+    return IMG_TOKEN.sub(lambda m: m.group(0) if '/' in m.group(1) else f"⟦img:{_local(iso, '%Y-%m')}/{m.group(1)}⟧", text)
+
+
+def _file_key(path):
+    return 'file:' + hashlib.sha1(path.encode('utf-8')).hexdigest()[:10]
+
+
+def _placer(cfg):
+    """→ function(raw @-path) → ('repo' | 'drive' | 'local', shown path or file name, normalised absolute path)."""
+    repo = str(cfg.repo).replace('\\', '/').rstrip('/') + '/'
+    root = _drive_name(cfg)
+    drive = cfg.drive() if root else None
+    dprefix = str(drive).replace('\\', '/').rstrip('/') + '/' if drive else None
+    cloud = re.compile(r'(CloudStorage|Google ?Drive|GoogleDrive|共享云端硬盘|Shared drives|My Drive|OneDrive|Dropbox)')
+
+    def place(raw):
+        p = os.path.expanduser(raw.strip()).replace('\\', '/')
+        if p.startswith(repo):
+            return 'repo', p[len(repo):], p
+        if dprefix and p.startswith(dprefix):
+            return 'drive', f'{root}/{p[len(dprefix):]}', p
+        if root and cloud.search(p) and f'/{root}/' in p:          # another machine's mount point
+            return 'drive', f"{root}/{p.split(f'/{root}/', 1)[1]}", p
+        return 'local', p.rstrip('/').rsplit('/', 1)[-1] or p, p
+    return place
+
+
+def _show(cfg, notes, text, role, place):
+    """Cached text → what the record shows: image tokens as drive paths, @-mentioned files placed, notes appended."""
+    L, root = cfg.lang, _drive_name(cfg)
+
+    def img(m):
+        rel = m.group(1)
+        note = notes.get('img:' + rel.rsplit('/', 1)[-1])
+        return t(L, 'convo_image', path=f'Drive:{root}/{_att_dir(cfg)}/{rel}') + (t(L, 'convo_note_suffix', note=note) if note else '')
+    text = IMG_TOKEN.sub(img, text)
+    if role != 'user':
+        return text
+
+    def ref(m):
+        kind, shown, abspath = place(m.group(1) or m.group(2))
+        if kind == 'repo':
+            return f'@{shown}'
+        if kind == 'drive':
+            return f'@Drive:{shown}'
+        note = notes.get(_file_key(abspath))
+        return t(L, 'convo_local_file', fname=shown) + (t(L, 'convo_note_suffix', note=note) if note else '')
+    return FILE_REF.sub(ref, text)
+
+
+def _note_wanted(cfg, text, iso, place):
+    """(key, what, label) for every image and every outside @-mentioned file in one user message."""
+    out = []
+    for m in IMG_TOKEN.finditer(text):
+        out.append(('img:' + m.group(1).rsplit('/', 1)[-1], 'image', _local(iso)))
+    for m in FILE_REF.finditer(text):
+        kind, shown, abspath = place(m.group(1) or m.group(2))
+        if kind == 'local':
+            out.append((_file_key(abspath), 'file', shown))
+    return out
+
+
 def _render(cfg, head, summaries, msgs, limit, withdrawn=()):
     L, through = cfg.lang, head.get('through') or ''
     agent = AGENT_LABEL.get(head['agent'], head['agent'])
@@ -296,6 +440,7 @@ def _render(cfg, head, summaries, msgs, limit, withdrawn=()):
     out += ['', t(L, 'convo_summaries'), SUM_START, summaries.strip() or t(L, 'convo_none'), SUM_END, '',
             t(L, 'convo_raw_since', since=_local(through)) if through else t(L, 'convo_raw'), '']
     gone = lambda iso: any(a <= iso <= b for a, b in withdrawn or ())
+    notes, place = head.get('notes') or {}, _placer(cfg)
     folded = False
     for k, row in enumerate(msgs):
         iso, role, text = row[0], row[1], row[2]
@@ -311,7 +456,8 @@ def _render(cfg, head, summaries, msgs, limit, withdrawn=()):
         if role == 'note':                                        # pause / resume
             out += [f'<!-- msg {iso} note -->', f'> {_local(iso)} · {text}', '']
             continue
-        out += [f'<!-- msg {iso} {role} -->', f"**{_local(iso)} · {head['who'] if role == 'user' else agent}**", '', text, '']
+        out += [f'<!-- msg {iso} {role} -->', f"**{_local(iso)} · {head['who'] if role == 'user' else agent}**", '',
+                _show(cfg, notes, text, role, place), '']
     if folded:
         out += ['</details>', '']
     return '\n'.join(out).rstrip('\n') + '\n'
@@ -508,10 +654,13 @@ def turn_notice(cfg, agent, data):
 # ---------------------------------------------------------------- turn end (hook)
 def _head(cfg, agent, sid, st, msgs, prev):
     first_user = next((m[2] for m in msgs if m[1] == 'user'), '')
+    first_user = IMG_TOKEN.sub(t(cfg.lang, 'convo_image_short'), first_user)
     head = {'session': sid, 'agent': agent, 'who': cfg.who(), 'title': re.sub(r'\s+', ' ', first_user)[:60] or prev.get('title', ''),
             'start': msgs[0][0], 'last': msgs[-1][3], 'through': prev.get('through') or ''}
     if prev.get('summarized'):                                    # summarized up to here; the verbatim text stays (0.1.25+)
         head['summarized'] = prev['summarized']
+    if prev.get('notes'):                                         # one-line notes on images and outside files (0.1.30+)
+        head['notes'] = prev['notes']
     if st.get('parent'):
         pst, hops = _load(cfg.state_dir / 'convo' / f"{st['parent']}.json"), 0
         while not pst.get('file') and pst.get('continued_by') and hops < 50:     # its file went on under a later session id
@@ -569,6 +718,8 @@ def update(cfg, agent, data, idx=None):
     if st.get('path') != tpath or os.path.getsize(tpath) < int(st.get('offset') or 0):
         st = {'path': tpath, 'offset': 0, 'msgs': [], 'file': st.get('file'), 'off': st.get('off')}
     new, st['offset'], st['tip'] = _read(tpath, int(st.get('offset') or 0), PARSERS[agent], st.get('tip'))
+    drive = cfg.drive() if _drive_name(cfg) else None
+    _flush_pending(cfg, drive)
     me, own, copied = cf.stem, [], None
     for iso, role, text, mid, link in new:
         owner = idx['ids'].get(mid) if mid else None
@@ -579,7 +730,7 @@ def update(cfg, agent, data, idx=None):
         if mid:
             idx['ids'][mid] = me
             st['last_mid'] = mid
-        own.append((iso, role, redact(cfg, text), mid, link))
+        own.append((iso, role, _keep_images(cfg, redact(cfg, text), iso), mid, link))
     if new and any(m[3] for m in new):
         _save(_index_path(cfg), idx)
     if st.get('forked_after'):                                    # this session's file was taken over; see _continue
@@ -593,6 +744,18 @@ def update(cfg, agent, data, idx=None):
         st['parent'] = st['continued_by']
     new = own
     _apply(cfg, st, new)
+    held = {h[2] for h in st.get('held') or []}                    # paused: kept on this machine only, images too
+    for iso, role, text, *_ in new:
+        if role == 'user' and text not in held:
+            for m in IMG_TOKEN.finditer(text):
+                _save_image(cfg, m.group(1), drive)
+    _IMGS.clear()
+    if not data.get('no_ask'):                                    # a live turn: these the agent has just seen, so it can describe them
+        place, wait = _placer(cfg), st.setdefault('note_wait', {})
+        for iso, role, text, *_ in new:
+            if role == 'user' and text not in held:
+                for key, what, label in _note_wanted(cfg, text, iso, place):
+                    wait.setdefault(key, [what, label, iso, 0])
     msgs = st['msgs']
     if not msgs:
         if st.get('file') and (cfg.repo / _dir(cfg) / st['file']).exists():     # everything in it was a copy
@@ -634,9 +797,24 @@ def update(cfg, agent, data, idx=None):
     text = _render(cfg, head, _summaries_of(old), shown, limit, st.get('withdrawn'))
     if text != old:
         _write(cfg, path, text)
-    ask = _ask(cfg, st, head, msgs, limit, keep, data, path)
+    ask = _ask(cfg, st, head, msgs, limit, keep, data, path) or _note_ask(cfg, st, head, data, path)
     _save(cf, st)
     return ask
+
+
+def _note_ask(cfg, st, head, data, path):
+    """Ask the agent for a one-line note on each new image / outside file (twice at most per item)."""
+    wait, notes = st.get('note_wait') or {}, head.get('notes') or {}
+    for k in [k for k, v in wait.items() if k in notes or v[3] >= MAX_NOTE_ASKS]:
+        del wait[k]
+    if not wait or data.get('no_ask') or data.get('stop_hook_active'):
+        return None
+    L, items = cfg.lang, []
+    for k, v in wait.items():
+        v[3] += 1
+        items.append(f'- {k}: ' + (t(L, 'convo_note_item_image', when=v[1]) if v[0] == 'image' else t(L, 'convo_note_item_file', fname=v[1])))
+    return t(L, 'convo_note_ask', file=path.relative_to(cfg.repo).as_posix(), n=len(wait), items='\n'.join(items),
+             template='\n'.join(f'{k} …' for k in wait))
 
 
 def _ask(cfg, st, head, msgs, limit, keep, data, path):
@@ -702,6 +880,109 @@ def compact(cfg, file, through, summary):
         st['asks'] = 0
         _save(cf, st)                                             # silently skipped inside a read-only sandbox
     print(t(L, 'convo_compacted', upto=_local(through), file=path.relative_to(cfg.repo).as_posix()))
+    return 0
+
+
+# ---------------------------------------------------------------- notes on attachments (the agent runs this when asked)
+def note(cfg, file, text):
+    """Lines '<key> <note>' (keys from the hook's request) → notes next to those images / files in the record."""
+    L = cfg.lang
+    path = pathlib.Path(file) if os.path.isabs(file) else cfg.repo / file
+    try:
+        s = path.read_text(encoding='utf-8')
+    except OSError:
+        print(t(L, 'convo_no_file', file=file))
+        return 1
+    m = MARK.search(s)
+    if not m:
+        print(t(L, 'convo_no_file', file=file))
+        return 1
+    head, added = json.loads(m.group(1)), {}
+    for line in (text or '').splitlines():
+        parts = line.strip().lstrip('-').strip().split(None, 1)
+        if len(parts) < 2:
+            continue
+        key = parts[0].rstrip(':：')
+        body = redact(cfg, parts[1].lstrip(':：').strip())
+        if NOTE_KEY.match(key) and len(body) >= 4 and body.strip('.…。 ') != '':
+            added[key] = re.sub(r'\s+', ' ', body)[:300]
+    if not added:
+        print(t(L, 'convo_note_none'))
+        return 1
+    head.setdefault('notes', {}).update(added)
+    _write(cfg, path, s[:m.start(1)] + _dump(head) + s[m.end(1):])
+    cf = _cache(cfg, head.get('agent', ''), head.get('session', ''))
+    st = _load(cf)
+    if st.get('path') and os.path.isfile(st['path']) and head.get('agent') in PARSERS:
+        try:                                                      # re-render so the notes show next to the references
+            update(cfg, head['agent'], {'session_id': head['session'], 'transcript_path': st['path'], 'no_ask': True})
+        except Exception:                                         # noqa: BLE001 — the notes are in the file's header either way
+            pass
+        st = _load(cf)
+        for k in added:
+            (st.get('note_wait') or {}).pop(k, None)
+        _save(cf, st)                                             # silently skipped inside a read-only sandbox
+    print(t(L, 'convo_noted', n=len(added), file=path.relative_to(cfg.repo).as_posix()))
+    return 0
+
+
+def backfill(cfg):
+    """Records written before 0.1.30 show pasted images as "[image]". Put each one back in place (matched by message
+    time against the local transcript), save the image to the shared drive, and place @-mentioned paths the new way.
+    Only those user messages change: headers, summaries and everything else stay as written. Safe to run again."""
+    L = cfg.lang
+    if not _drive_name(cfg) or not _dir(cfg):
+        print(t(L, 'convo_backfill_nodrive'))
+        return 1
+    drive, place, root = cfg.drive(), _placer(cfg), cfg.repo / _dir(cfg)
+    files = {}
+    for f in root.glob('*/*.md'):
+        try:
+            sess = _head_of(f.read_text(encoding='utf-8')[:8000]).get('session')
+        except OSError:
+            continue
+        if sess:
+            files.setdefault(sess, []).append(f)
+    nfiles = nimg = 0
+    for cp in _caches(cfg):
+        st, (agent, sid) = _load(cp), cp.stem.split('_', 1)
+        if agent not in PARSERS or not os.path.isfile(st.get('path') or '') or not files.get(sid):
+            continue
+        tokens = {}                                               # message time -> its images, in order
+        for iso, role, text, *_ in _read(st['path'], 0, PARSERS[agent])[0]:
+            if role == 'user':
+                found = [f"{_local(iso, '%Y-%m')}/{m.group(1)}" for m in IMG_TOKEN.finditer(text)]
+                if found:
+                    tokens.setdefault(iso, []).extend(found)
+        for f in files[sid]:
+            s = f.read_text(encoding='utf-8')
+            notes = _head_of(s).get('notes') or {}
+            starts = [m.start() for m in MSG_MARK.finditer(s)]
+            if not starts:
+                continue
+            out = [s[:starts[0]].replace('[image]', t(L, 'convo_image_short'))]   # the opening line and the title
+            for a, b in zip(starts, starts[1:] + [len(s)]):
+                block = s[a:b]
+                m = re.match(r'<!-- msg (\S+) user -->', block)
+                if m:
+                    todo = list(tokens.get(m.group(1), []))
+
+                    def put(_, todo=todo):
+                        if not todo:
+                            return '[image]'
+                        rel = todo.pop(0)
+                        _save_image(cfg, rel, drive)
+                        return f'⟦img:{rel}⟧'
+                    block = _show(cfg, notes, re.sub(r'\[image\]', put, block), 'user', place)
+                out.append(block)
+            new = ''.join(out)
+            if new != s:
+                mark = t(L, 'convo_image', path='')[:4]               # "[图片:" / "[ima"
+                nimg += new.count(mark) - s.count(mark)
+                _write(cfg, f, new)
+                nfiles += 1
+        _IMGS.clear()
+    print(t(L, 'convo_backfilled', files=nfiles, images=max(nimg, 0)))
     return 0
 
 

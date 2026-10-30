@@ -107,6 +107,7 @@ def run(cfg, keep=False):
     cdir = (jdir / 'convo_selftest').as_posix()                    # alice records conversations, with tiny limits
     conf = json.loads((A / CONFIG_NAME).read_text(encoding='utf-8'))
     conf['convo'] = {'dir': cdir, 'compact_chars': 600, 'keep_recent_chars': 200}
+    conf['drive'] = {'root_name': 'SelfTestDrive', 'marker': 'selftest-marker', 'patterns': []}   # never the real shared drive
     (A / CONFIG_NAME).write_text(json.dumps(conf, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     ro = tmp / 'rollout-2026-01-02T00-00-00-selftestcodex1.jsonl'
     um = lambda when, text: {'timestamp': when, 'type': 'response_item', 'payload': {'type': 'message', 'role': 'user', 'content': [{'type': 'input_text', 'text': text}]}}
@@ -294,6 +295,72 @@ def run(cfg, keep=False):
     check('Codex rollback: the last turn is folded as withdrawn, the new one recorded',
           folded(cb, 'codex 撤回的问') and folded(cb, 'codex 撤回的答') and not folded(cb, 'codex 第一答') and 'codex 重新答' in cb
           and not folded(cb, 'codex 重新问'), cb[-200:].replace('\n', ' '))
+
+    print('7d attachments: pasted images saved to the shared drive, @-mentioned files placed, notes from the agent')
+    droot = tmp / 'drive'; (droot / 'SelfTestDrive' / 'selftest-marker').mkdir(parents=True)
+    denv = {cfg.key('DRIVE_ROOT'): str(droot)}
+    png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+    img = {'type': 'image', 'source': {'type': 'base64', 'media_type': 'image/png', 'data': png}}
+    outside = tmp / 'downloads' / 'site-notes.docx'; outside.parent.mkdir(); outside.write_text('x', encoding='utf-8')
+    ta = tmp / 'claude-attach.jsonl'
+    jsonl(ta, [dict(cu('2026-01-08T00:00:00.000Z', ''), message={'role': 'user', 'content': [img, tx(f'看这张截图,另外参考 @"{outside}" 和 @{A}/docs/plan.md')]}),
+               ca('2026-01-08T00:00:05.000Z', tx('看到了。'))])
+    astdin = lambda **kw: json.dumps(dict({'session_id': 'attach1', 'transcript_path': str(ta)}, **kw))
+    out = ts(A, 'hook', 'claude', 'stop', stdin=astdin(), env=denv)
+    saved = list((droot / 'SelfTestDrive').rglob('*.png'))
+    check('pasted image saved once to <drive>/<attachments>/<month>/', len(saved) == 1 and saved[0].parent.name == '2026-01', [p.name for p in saved])
+    rec = next(iter((A / cdir).glob('*/*_claude_attach1*.md')), None)
+    body = rec.read_text(encoding='utf-8') if rec else ''
+    check('record shows the drive path, the repo-relative path and only the outside file\'s name',
+          f'Drive:SelfTestDrive/' in body and saved and saved[0].name in body and '@docs/plan.md' in body
+          and 'site-notes.docx' in body and str(outside.parent) not in body, body[-300:].replace('\n', ' '))
+    try:
+        d = json.loads(out); reason = d.get('reason', '')
+    except ValueError:
+        d, reason = {}, ''
+    keys = re.findall(r'^- ((?:img|file):\S+?):', reason, re.M)
+    check('asks the agent for a note on the image and the outside file (not the repo file)', d.get('decision') == 'block'
+          and 'convo note' in reason and len(keys) == 2, reason[:120])
+    if rec and keys:
+        out = ts(A, 'convo', 'note', '--file', rec.relative_to(A).as_posix(), stdin='\n'.join(
+            f'{k} ' + ('后台纠错页截图,点采纳后仍显示待处理' if k.startswith('img:') else '网站待改清单,这次按它改了首页') for k in keys))
+        body = rec.read_text(encoding='utf-8')
+        check('notes appear next to the image and the file', '点采纳后仍显示待处理' in body and '按它改了首页' in body, out[:80])
+        out = ts(A, 'hook', 'claude', 'stop', stdin=astdin(), env=denv)
+        check('no new request once noted; the notes survive the next turn', out.strip() == '{}' and '按它改了首页' in rec.read_text(encoding='utf-8'), out[:80])
+    tp = tmp / 'claude-attach-paused.jsonl'
+    other = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+    jsonl(tp, [cu('2026-01-08T01:00:00.000Z', '暂停记录'), ca('2026-01-08T01:00:05.000Z', tx('好。')),
+               dict(cu('2026-01-08T01:01:00.000Z', ''), message={'role': 'user', 'content': [{'type': 'image', 'source': {'type': 'base64', 'media_type': 'image/png', 'data': other}}, tx('私下的截图')]})])
+    ts(A, 'hook', 'claude', 'stop', stdin=json.dumps({'session_id': 'attachpaused1', 'transcript_path': str(tp)}), env=denv)
+    check('an image pasted while recording is paused is not saved to the drive', len(list((droot / 'SelfTestDrive').rglob('*.png'))) == 1)
+    cimg = tmp / 'rollout-2026-01-08T02-00-00-codeximg1.jsonl'
+    jsonl(cimg, [{'timestamp': '2026-01-08T02:00:00.000Z', 'type': 'session_meta', 'payload': {'id': 'codeximg1'}},
+                 {'timestamp': '2026-01-08T02:00:01.000Z', 'type': 'response_item', 'payload': {'type': 'message', 'role': 'user', 'content': [
+                     {'type': 'input_text', 'text': '<image name=[Image #1] path="t.png">'},
+                     {'type': 'input_image', 'image_url': 'data:image/png;base64,' + other, 'detail': 'high'},
+                     {'type': 'input_text', 'text': '</image>'}, {'type': 'input_text', 'text': 'codex 贴图的问题'}]}}])
+    ts(A, 'hook', 'codex', 'stop', stdin=json.dumps({'session_id': 'codeximg1', 'transcript_path': str(cimg)}), env=dict(denv, TEAM_SYNC_FOREGROUND='1'))
+    cb = ''.join(f.read_text(encoding='utf-8') for f in (A / cdir).glob('*/*_codex_codeximg*.md'))
+    check('Codex: the image message is kept (its <image> wrapper dropped) and the image saved', 'codex 贴图的问题' in cb
+          and '<image name' not in cb and len(list((droot / 'SelfTestDrive').rglob('*.png'))) == 2, cb[-200:].replace('\n', ' '))
+
+    conf0 = (A / CONFIG_NAME).read_text(encoding='utf-8')          # an old-style record: no shared drive -> "[image]"
+    (A / CONFIG_NAME).write_text(json.dumps(dict(json.loads(conf0), drive={'root_name': ''}), ensure_ascii=False), encoding='utf-8')
+    to = tmp / 'claude-oldimg.jsonl'
+    third = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+    jsonl(to, [dict(cu('2026-01-09T00:00:00.000Z', ''), message={'role': 'user', 'content': [{'type': 'image', 'source': {'type': 'base64', 'media_type': 'image/png', 'data': third}}, tx('旧记录里的截图')]}),
+               ca('2026-01-09T00:00:05.000Z', tx('收到。'))])
+    ts(A, 'hook', 'claude', 'stop', stdin=json.dumps({'session_id': 'oldimg1', 'transcript_path': str(to)}))
+    (A / CONFIG_NAME).write_text(conf0, encoding='utf-8')
+    ro_ = next(iter((A / cdir).glob('*/*_claude_oldimg1*.md')), None)
+    before = ro_.read_text(encoding='utf-8') if ro_ else ''
+    out = ts(A, 'convo', 'backfill', env=denv)
+    after = ro_.read_text(encoding='utf-8') if ro_ else ''
+    check('backfill: "[image]" in an old record becomes the saved image, nothing else changes', '[image]' in before and '[image]' not in after
+          and len(list((droot / 'SelfTestDrive').rglob('*.png'))) == 3 and re.sub(r'\[image\]|\[图片\]', '', before) == re.sub(r'\[[^\]]*Drive:[^\]]*\]|\[图片\]', '', after), out[:80])
+    out2 = ts(A, 'convo', 'backfill', env=denv)
+    check('backfill again: no change', ro_ and ro_.read_text(encoding='utf-8') == after, out2[:80])
 
     print('8 journal: concurrent lines merge; auto line only at session end')
     C = tmp / 'carol'

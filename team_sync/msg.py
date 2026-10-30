@@ -55,7 +55,7 @@ _T = {
         'autosync_unsupported': 'autosync: no scheduler backend for {os}',
         'upgraded': '✓ Installed team-sync {version}',
         'convo_title': '# Conversation · {who} · {agent} · started {date}',
-        'convo_intro': '> Written by team-sync at the end of every turn: only what the two sides said, no tool calls or tool output; credential-shaped strings are replaced with [redacted]. Every {limit} characters of new text, the agent adds a summary of the older part at the top; the verbatim text is kept. Times are the local time of the machine that wrote the file ({tz}).',
+        'convo_intro': '> Written by team-sync at the end of every turn: only what the two sides said, no tool calls or tool output; credential-shaped strings are replaced with [redacted]. Images the user pastes are kept in the attachments folder on the shared drive; the brackets after an attachment hold the note the agent wrote about it. Every {limit} characters of new text, the agent adds a summary of the older part at the top; the verbatim text is kept. Times are the local time of the machine that wrote the file ({tz}).',
         'convo_opening': '> Opening message: {title}',
         'convo_parent': '> Continues {file} (forked or continued from that session); the earlier conversation is in that record and is not repeated here.',
         'convo_prev_month': '> Same session, earlier months: {file} (one file per month).',
@@ -81,6 +81,23 @@ _T = {
         'convo_short': 'Summary too short (under 20 characters); nothing written.',
         'convo_bad_through': '--through {through} is not valid: use the time given in the hook request, later than the part already summarized ({old}). Nothing changed.',
         'convo_compacted': '✓ Summarized the conversation up to {upto} (verbatim kept): {file}',
+        'convo_att_dir': 'conversation-attachments',
+        'convo_image': '[image: {path}]',
+        'convo_local_file': '[local file: {fname}]',
+        'convo_note_suffix': ' ({note})',
+        'convo_note_item_image': 'an image the user pasted at {when}',
+        'convo_note_item_file': 'a file outside the repo and the shared drive: {fname}',
+        'convo_note_ask': (
+            "[team-sync hook, not the user] This turn the user gave {n} attachment(s); the conversation record only shows where they are or the file name, so teammates cannot see what they were:\n{items}\n"
+            "Write one line for each: for an image, what it shows (which page, which error, which material) and what the user meant by it; for a file, what it is and how it bears on this work (only the part that concerns the project). No secrets. "
+            "Then run this (keep the key at the start of each line, replace the rest with your note):\n"
+            "python3 bin/team_sync.py convo note --file \"{file}\" <<'EOF'\n{template}\nEOF\n"
+            "(Without heredoc: put the lines in a temporary file and use --notes-file <path>.) Do nothing else; when done reply with one line: Attachment notes recorded."),
+        'convo_note_none': 'No usable lines (each line: the key from the request, a space, then the note); nothing written.',
+        'convo_noted': '✓ Recorded {n} attachment note(s): {file}',
+        'convo_image_short': '[image]',
+        'convo_backfill_nodrive': 'No shared drive configured (drive.root_name) or no convo.dir: nothing to do.',
+        'convo_backfilled': '✓ Updated {files} record file(s): {images} image(s) put back from this machine\'s transcripts.',
         'convo_recent': 'Recent conversation records (open one to see what was discussed):',
         'convo_paused_note': '⏸ The user paused recording; what follows was not recorded.',
         'convo_paused_filled_note': '⏸ The user paused recording here; the paused part was added back when recording resumed.',
@@ -171,7 +188,7 @@ _T = {
         'autosync_unsupported': 'autosync: {os} 上没有可用的调度后端',
         'upgraded': '✓ 已安装 team-sync {version}',
         'convo_title': '# 对话记录 · {who} · {agent} · {date} 开始',
-        'convo_intro': '> team-sync 在每轮对话结束时自动写入:只有双方说的话,不含工具调用和工具输出;密钥形状的字符串已换成 [redacted]。原文每多出 {limit} 字,agent 会给较早的部分补一段「摘要」放在前面,原文照样保留。时间按写入这份记录的电脑的时区({tz})。',
+        'convo_intro': '> team-sync 在每轮对话结束时自动写入:只有双方说的话,不含工具调用和工具输出;密钥形状的字符串已换成 [redacted]。用户贴的图片存在共享盘的对话附件文件夹,附件后面括号里是 agent 写的说明。原文每多出 {limit} 字,agent 会给较早的部分补一段「摘要」放在前面,原文照样保留。时间按写入这份记录的电脑的时区({tz})。',
         'convo_opening': '> 第一句: {title}',
         'convo_parent': '> 接续自 {file}(从那个会话 fork 或续接而来);之前的对话在那份记录里,这里不重复。',
         'convo_prev_month': '> 同一个会话之前的记录在 {file}(一个月一个文件)。',
@@ -196,6 +213,23 @@ _T = {
         'convo_short': '摘要太短(不到 20 字),没有写入。',
         'convo_bad_through': '--through {through} 不对:要用 hook 提示里给的时间,并且要晚于已经写过摘要的 {old}。没有改动。',
         'convo_compacted': '✓ 已给 {upto} 及之前的对话补上摘要(原文保留): {file}',
+        'convo_att_dir': '对话附件',
+        'convo_image': '[图片: {path}]',
+        'convo_local_file': '[本机文件: {fname}]',
+        'convo_note_suffix': '(说明: {note})',
+        'convo_note_item_image': '用户 {when} 贴的图片',
+        'convo_note_item_file': '仓库和共享盘以外的文件:{fname}',
+        'convo_note_ask': (
+            "[团队同步 hook,不是用户发言] 这一轮用户给了 {n} 个附件,对话记录里只记了位置或文件名,队友看不到内容:\n{items}\n"
+            "请给每一项写一句说明:图片写图上是什么(哪个页面、哪段报错、哪份材料)、用户想用它说明什么;文件写它是什么、和这次的工作有什么关系,只写和项目有关的部分。不写密钥、口令。"
+            "然后运行下面的命令(每行开头的编号照抄,后面换成你的说明):\n"
+            "python3 bin/team_sync.py convo note --file \"{file}\" <<'EOF'\n{template}\nEOF\n"
+            "(用不了 heredoc 时,把这几行写进一个临时文件,改用 --notes-file <路径>。)不要做别的事,完成后只回复一句:附件说明已记下。"),
+        'convo_note_none': '没有可用的行(每行:请求里给的编号、一个空格、说明),没有写入。',
+        'convo_noted': '✓ 已记下 {n} 条附件说明: {file}',
+        'convo_image_short': '[图片]',
+        'convo_backfill_nodrive': '没有配置共享盘(drive.root_name)或对话记录目录(convo.dir),没有改动。',
+        'convo_backfilled': '✓ 改了 {files} 份对话记录:按这台电脑上的原始记录补回 {images} 张图片。',
         'convo_recent': '最近的对话记录(想知道之前聊过什么,打开对应文件):',
         'convo_paused_note': '⏸ 用户暂停了记录,之后的对话没有记下来。',
         'convo_paused_filled_note': '⏸ 用户在这里暂停了记录;恢复时补上了暂停期间的内容。',
