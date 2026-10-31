@@ -56,12 +56,7 @@ _T = {
         'autosync_stopped': 'not running (team-sync autosync on)',
         'autosync_unsupported': 'autosync: no scheduler backend for {os}',
         'upgraded': '✓ Installed team-sync {version}',
-        'convo_title': '# Conversation · {who} · {agent} · started {date}',
-        'convo_intro': '> Written by team-sync at the end of every turn: only what the two sides said, no tool calls or tool output; credential-shaped strings are replaced with [redacted]. Images the user pastes are kept in the attachments folder on the shared drive; the brackets after an attachment hold the note the agent wrote about it. Every {limit} characters of new text, the agent adds a summary of the older part at the top; the verbatim text is kept. Times are the local time of the machine that wrote the file ({tz}).',
-        'convo_opening': '> Opening message: {title}',
-        'convo_parent': '> Continues {file} (forked or continued from that session); the earlier conversation is in that record and is not repeated here.',
-        'convo_prev_month': '> Same session, earlier months: {file} (one file per month).',
-        'convo_next_month': '> This session goes on in {file} (one file per month).',
+        'convo_readme': '# Conversation records\n\nteam-sync writes this folder: at the end of every Claude Code or Codex turn, what the user and the agent said goes into the session\'s record, one file per session per month. The tool also writes this README; do not edit it by hand, the next version replaces it.\n\n## What is kept, what is not\n- Only what the two sides said. No tool calls, tool output or reasoning.\n- Credential-shaped strings are replaced with [redacted].\n- Images the user pastes are saved on the shared drive ({drive}) under `{att}/YYYY-MM/` and shown as "[image: Drive:…]". Mentioned files are not copied: a file in the repository is shown by its relative path, one on the shared drive as `Drive:…`, anything else by its name. The line in brackets after an attachment is the agent\'s note on it.\n- A stretch the user asked not to record is left out (see the team rules).\n- Agents without a recording hook are not recorded.\n\n## File names\n`YYYY-MM/date_who_agent_first-8-of-session-id.md`; the date is the session\'s first message in that month.\n\n## Front matter\n| Field | Meaning |\n|---|---|\n| title | The session\'s title: the name the user gave it in the app\'s sidebar; if none, the title the app generated; if none, the opening message (cut at a punctuation mark with "…" when long) |\n| topics | The main things the session has been about. The agent updates them when it writes a summary; a session with no summary yet has none |\n| who | Whose conversation |\n| agent | Which agent: Claude Code, Codex |\n| started / updated | Time of the first and the last message (to the minute) |\n| timezone | Time zone of those times and of the times in the text: the zone of the machine that writes the record |\n| continued_from | The session this one was resumed or forked from; the earlier conversation is in that record and is not repeated |\n| prev_month / next_month | The same session\'s record for the month before / after |\n| session | Session id (for the tool) |\n| earlier_sessions | Earlier ids of a session that was resumed (for the tool) |\n| summarized_through | The last message the summaries cover (for the tool) |\n| hidden_through | Records from before 0.1.25: the verbatim text before this message was dropped, only the summary is left (for the tool) |\n| attachment_notes | The notes on each image and outside file, shown in brackets after them in the text (for the tool) |\n\nEmpty fields are left out.\n\n## The text\n- "## Summary": whenever the verbatim text not yet summarized passes {limit} characters, the hook asks the running agent to summarize an older stretch; the summaries collect here in order. The verbatim text stays below.\n- "## Verbatim": each message has a line `<!-- msg time user|agent -->` (for the tool), then "time · who".\n- Messages folded under "↩ Withdrawn" were taken back by a rewind. They are kept verbatim but are not part of the conversation.\n- Lines like `> time · …` mark where recording was paused or resumed.\n\n## Using the records\n- To see what was discussed before: the session-start summary lists the latest records; otherwise find them by the date and name in the file name, or search this folder.\n- Do not edit records by hand. When a summary or an attachment note is needed, the hook gives the command to run.',
         'convo_summaries': '## Summary',
         'convo_none': '(none yet)',
         'convo_raw': '## Verbatim',
@@ -73,8 +68,11 @@ _T = {
             "1. Read the file. Summarize the messages under \"## Verbatim\" from the one at {since} up to and including `<!-- msg {through} …-->`, about {chars} characters.\n"
             "2. Write the summary as chronological bullet points: what the user asked for and decided (quote the key words), what you concluded and finished, "
             "files changed, key numbers, what is still open. No secrets, passwords or personal data. About a tenth to a fifth of the original length.\n"
-            "3. Run this, with the summary between the two EOF lines:\n"
+            "   Start with one line `topics: a, b, c`: the main things this whole session has been about so far (not only this part), "
+            "at most 8, a few words each; they go into the record's front matter.\n"
+            "3. Run this, with the topics line and the summary between the two EOF lines:\n"
             "python3 bin/team_sync.py convo compact --file \"{file}\" --through {through} <<'EOF'\n"
+            "topics: …\n"
             "(summary)\n"
             "EOF\n"
             "(If heredocs are not available, write the summary to a temporary file and pass --summary-file <path> instead.)\n"
@@ -191,12 +189,7 @@ _T = {
         'autosync_stopped': '未开启(team-sync autosync on)',
         'autosync_unsupported': 'autosync: {os} 上没有可用的调度后端',
         'upgraded': '✓ 已安装 team-sync {version}',
-        'convo_title': '# 对话记录 · {who} · {agent} · {date} 开始',
-        'convo_intro': '> team-sync 在每轮对话结束时自动写入:只有双方说的话,不含工具调用和工具输出;密钥形状的字符串已换成 [redacted]。用户贴的图片存在共享盘的对话附件文件夹,附件后面括号里是 agent 写的说明。原文每多出 {limit} 字,agent 会给较早的部分补一段「摘要」放在前面,原文照样保留。时间按写入这份记录的电脑的时区({tz})。',
-        'convo_opening': '> 第一句: {title}',
-        'convo_parent': '> 接续自 {file}(从那个会话 fork 或续接而来);之前的对话在那份记录里,这里不重复。',
-        'convo_prev_month': '> 同一个会话之前的记录在 {file}(一个月一个文件)。',
-        'convo_next_month': '> 这个会话之后的记录在 {file}(一个月一个文件)。',
+        'convo_readme': '# 对话记录\n\n这个文件夹由 team-sync 自动写入:Claude Code 和 Codex 每轮对话结束时,把用户和 agent 说的话记进来,一个会话每个月一份。这份说明也由工具生成,不要手改,新版本会覆盖它。\n\n## 记了什么、没记什么\n- 只记双方说的话。工具调用、工具输出、思考过程不记。\n- 密钥形状的字符串换成 [redacted]。\n- 用户贴的图片存在共享盘({drive})的 `{att}/年-月/` 文件夹,记录里写成「[图片: Drive:…]」。引用的文件不复制:仓库里的写相对路径,共享盘里的写 `Drive:…`,其他位置只留文件名。附件后面括号里是 agent 写的一句说明。\n- 用户要求暂停记录的那一段不记(见团队守则)。\n- 没有记录 hook 的 agent 不记。\n\n## 文件名\n`年-月/日期_谁_agent_会话号前8位.md`,日期是这个会话在这个月的第一条消息的日期。\n\n## 开头的 front matter\n| 字段 | 意思 |\n|---|---|\n| title | 会话标题:用户在 app 侧边栏里改过的名字;没改过就用 app 自动起的标题;都没有时是第一句话(太长时在标点处截断,加「…」) |\n| topics | 这个会话主要在做的几件事。agent 补写摘要时更新;还没写过摘要的会话没有这一项 |\n| who | 谁的对话 |\n| agent | 用的哪个:Claude Code、Codex |\n| started / updated | 第一条和最后一条消息的时间(写到分钟) |\n| timezone | 上面这两个时间和正文里时间的时区,按写这份记录的电脑 |\n| continued_from | 这个会话是从哪个会话恢复或分叉出来的;之前的对话在那份记录里,这里不重复 |\n| prev_month / next_month | 同一个会话跨月时,上个月 / 下个月的那一份 |\n| session | 会话号(工具用) |\n| earlier_sessions | 会话被恢复过时,之前用过的会话号(工具用) |\n| summarized_through | 摘要已经写到哪条消息(工具用) |\n| hidden_through | 0.1.25 以前的旧记录:这条消息之前的原文已删掉,只剩摘要(工具用) |\n| attachment_notes | 每张图片、每个外部文件的说明,正文里附件后面括号里的就是这些(工具用) |\n\n没有内容的字段不写。\n\n## 正文\n- 「## 摘要」:还没写摘要的原文每超过 {limit} 字,hook 会请当时的 agent 给较早的一段补写摘要,按时间先后排在这里。原文照样保留在下面。\n- 「## 原文」:每条消息前一行是 `<!-- msg 时间 user|agent -->`(工具用),然后是「时间 · 谁」。\n- 折叠在「↩ 已撤回」下面的,是用户 rewind 或回退时撤回的消息,原样保留,但不算有效的对话。\n- `> 时间 · …` 这样的行标出在哪里暂停或恢复了记录。\n\n## 怎么用\n- 想知道之前聊过什么:会话开头的团队同步摘要列了最近几份;也可以按文件名里的日期和人名找,或在这个文件夹里搜关键词。\n- 不要手改记录。要补摘要或写附件说明时,hook 会给出要运行的命令。',
         'convo_summaries': '## 摘要',
         'convo_none': '(还没有)',
         'convo_raw': '## 原文',
@@ -207,8 +200,10 @@ _T = {
             "1. 读这个文件。要写摘要的是「## 原文」下从 {since} 那条到 `<!-- msg {through} …-->` 这一条(含)为止的消息,约 {chars} 字。\n"
             "2. 用中文写摘要,按时间顺序分点:用户提的要求和做的决定(关键处保留原话)、你给出的结论和做完的事、改动的文件、关键数字、还没做完的事。"
             "不写密钥、口令和个人隐私。长度约为原文的十分之一到五分之一。\n"
-            "3. 运行下面的命令,摘要放在两行 EOF 之间:\n"
+            "   摘要前先写一行 `topics: 甲, 乙, 丙`:这个会话到目前为止(不只这一段)主要在做的几件事,最多 8 个,每个几个字;会写进记录开头的 front matter。\n"
+            "3. 运行下面的命令,topics 那行和摘要都放在两行 EOF 之间:\n"
             "python3 bin/team_sync.py convo compact --file \"{file}\" --through {through} <<'EOF'\n"
+            "topics: …\n"
             "(摘要)\n"
             "EOF\n"
             "(用不了 heredoc 时,把摘要写进一个临时文件,改用 --summary-file <路径>。)\n"

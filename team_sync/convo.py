@@ -27,6 +27,7 @@ import pathlib
 import re
 import time
 
+from . import __version__
 from .gate import LINE_PAT
 from .msg import t
 
@@ -53,6 +54,7 @@ CODEX_MENTION = re.compile(r'^## (.+?): (.+?)[ \t]*\n(Image attachment: true)?',
 FILE_REF = re.compile(r'@"([^"\n]+)"|@((?:/|~/|[A-Za-z]:\\)[^\s"`\'，。、；：）)]+)')   # @"/a b/c.md" or @/a/c.md
 NOTE_KEY = re.compile(r'^(img:[0-9a-f]{16}\.[a-z]{3,4}|file:[0-9a-f]{10})$')
 MAX_NOTE_ASKS = 2
+TITLE_MAX = 120
 _IMGS = {}                      # <hash>.<ext> -> base64 data, filled while a transcript is parsed
 
 
@@ -121,6 +123,9 @@ def _claude(d):
     if d.get('isSidechain') or d.get('isMeta') or d.get('isCompactSummary') or d.get('isApiErrorMessage'):
         return []
     ts, typ = d.get('timestamp') or '', d.get('type')
+    if typ in ('custom-title', 'ai-title'):                      # the name in the app's sidebar: renamed by the user / generated
+        name = (d.get('customTitle') if typ == 'custom-title' else d.get('aiTitle')) or ''
+        return [(ts, 'title_' + typ.split('-')[0], name.strip())] if name.strip() else []
     if typ == 'attachment':                                       # typed while the agent was still working
         a = d.get('attachment') or {}
         if a.get('type') == 'queued_command' and a.get('commandMode', 'prompt') == 'prompt' \
@@ -199,6 +204,25 @@ def _codex_rollout(sid):
     home = os.environ.get('CODEX_HOME') or os.path.join(os.path.expanduser('~'), '.codex')
     hits = glob.glob(os.path.join(home, 'sessions', '*', '*', '*', f'rollout-*{sid}*.jsonl'))
     return max(hits, key=os.path.getmtime) if hits else None
+
+
+def _codex_title(sid):
+    """The thread's name in the Codex app sidebar (generated, or as the user renamed it), from its session index."""
+    home = os.environ.get('CODEX_HOME') or os.path.join(os.path.expanduser('~'), '.codex')
+    name = ''
+    try:
+        with open(os.path.join(home, 'session_index.jsonl'), encoding='utf-8') as f:
+            for line in f:
+                if sid in line:
+                    try:
+                        d = json.loads(line)
+                    except ValueError:
+                        continue
+                    if d.get('id') == sid and (d.get('thread_name') or '').strip():
+                        name = d['thread_name'].strip()
+    except OSError:
+        pass
+    return name
 
 
 def codex_is_exec(data):
@@ -288,21 +312,100 @@ def _name(cfg, agent, sid, first_iso):
     return f"{day[:7]}/{day}_{who}_{agent}_{re.sub(r'[^A-Za-z0-9]', '', sid)[:8]}.md"
 
 
+# The record's header (0.1.34+): YAML front matter. Simple values are written plain, anything else as JSON (a subset of
+# YAML), so the file stays readable and any YAML reader can load it; this module parses its own output without PyYAML.
+# The meaning of each field is in the README the tool keeps in the records folder (convo_readme).
+FRONT = (('title', 'title'), ('topics', 'topics'), ('who', 'who'), ('agent', 'agent'), ('started', 'start'),
+         ('updated', 'last'), ('timezone', None), ('continued_from', 'parent'), ('prev_month', 'prev'),
+         ('next_month', 'next'), ('session', 'session'), ('earlier_sessions', 'earlier_sessions'),
+         ('summarized_through', 'summarized'), ('hidden_through', 'through'), ('attachment_notes', 'notes'))
+PLAIN = re.compile(r'[\w][\w .:+/-]*')
+
+
+def _yv(v):
+    return v if isinstance(v, str) and PLAIN.fullmatch(v) and v.strip() == v else json.dumps(v, ensure_ascii=False)
+
+
+def _front(head):
+    tz = _tz(head.get('last') or head.get('start') or '')
+    fmt = lambda iso: _local(iso, '%Y-%m-%d %H:%M')
+    vals = {'title': head.get('title') or '', 'agent': AGENT_LABEL.get(head.get('agent'), head.get('agent')),
+            'started': fmt(head.get('start') or ''), 'updated': fmt(head.get('last') or ''), 'timezone': tz}
+    out = ['---']
+    for key, inner in FRONT:
+        v = vals[key] if key in vals else head.get(inner)
+        if v in (None, '', [], {}) and key not in ('title', 'who', 'agent', 'session'):
+            continue
+        if key == 'attachment_notes':
+            out.append('attachment_notes:')
+            out += [f'  {json.dumps(k, ensure_ascii=False)}: {json.dumps(n, ensure_ascii=False)}' for k, n in sorted(v.items())]
+        elif key == 'title':
+            out.append(f'title: {json.dumps(v, ensure_ascii=False)}')
+        else:
+            out.append(f'{key}: {_yv(v)}')
+    return '\n'.join(out + ['---'])
+
+
+def _iso(local, tz):
+    """'2026-10-31 09:54' + 'UTC+8' → '2026-10-31T01:54:00.000Z' (what the old header kept)."""
+    m = re.fullmatch(r'UTC([+-])(\d{1,2})(?::(\d{2}))?', tz or '')
+    try:
+        t0 = dt.datetime.strptime(local, '%Y-%m-%d %H:%M')
+    except (TypeError, ValueError):
+        return ''
+    off = dt.timedelta(hours=int(m.group(2)), minutes=int(m.group(3) or 0)) * (1 if m.group(1) == '+' else -1) if m else dt.timedelta()
+    return (t0 - off).strftime('%Y-%m-%dT%H:%M:00.000Z')
+
+
 def _head_of(text):
-    m = MARK.search(text[:8000])
+    if text.startswith('---\n'):
+        end = text.find('\n---\n', 3)
+        if end < 0:
+            return {}
+        raw, cur = {}, None
+        for line in text[4:end].split('\n'):
+            if line.startswith('  ') and cur:                     # an entry under attachment_notes
+                k, _, v = line.strip().partition(': ')
+                try:
+                    raw[cur][json.loads(k)] = json.loads(v)
+                except ValueError:
+                    pass
+                continue
+            k, _, v = line.partition(':')
+            k, v = k.strip(), v.strip()
+            if not k:
+                continue
+            if k == 'attachment_notes' and not v:
+                raw[k], cur = {}, k
+                continue
+            cur = None
+            try:
+                raw[k] = json.loads(v) if v[:1] in '"[{' else v
+            except ValueError:
+                raw[k] = v
+        head = {inner: raw[key] for key, inner in FRONT if inner and key in raw and key not in ('started', 'updated')}
+        for key, inner in (('started', 'start'), ('updated', 'last')):
+            head[inner] = _iso(raw.get(key), raw.get('timezone'))
+        back = {v: k for k, v in AGENT_LABEL.items()}
+        head['agent'] = back.get(head.get('agent'), head.get('agent'))
+        return head
+    m = MARK.search(text[:8000])                                  # records written before 0.1.34
     try:
         return json.loads(m.group(1)) if m else {}
     except ValueError:
         return {}
 
 
+def _rehead(cfg, text, head):
+    """The same record with a new header (anything before the summary heading is header, old or new format)."""
+    i = text.find(SUM_START)
+    k = text.rfind(t(cfg.lang, 'convo_summaries'), 0, i) if i >= 0 else -1
+    return _front(head) + '\n\n' + text[k:] if k >= 0 else None
+
+
 def _summaries_of(text):
     i, j = text.find(SUM_START), text.find(SUM_END)
     return text[i + len(SUM_START):j].strip('\n') if 0 <= i < j else ''
-
-
-def _dump(head):
-    return json.dumps(head, ensure_ascii=False).replace('>', '\\u003e')       # keeps "-->" out of the comment
 
 
 def _write(cfg, path, text):
@@ -451,18 +554,7 @@ def _note_wanted(cfg, text, iso, place):
 def _render(cfg, head, summaries, msgs, limit, withdrawn=()):
     L, through = cfg.lang, head.get('through') or ''
     agent = AGENT_LABEL.get(head['agent'], head['agent'])
-    out = [t(L, 'convo_title', who=head['who'], agent=agent, date=_local(head['start'], '%Y-%m-%d')),
-           '<!-- team-sync-convo ' + _dump(head) + ' -->', '',
-           t(L, 'convo_intro', limit=limit, tz=_tz(head.get('last') or '') or '?')]
-    if head.get('parent'):
-        out.append(t(L, 'convo_parent', file=head['parent']))
-    if head.get('prev'):
-        out.append(t(L, 'convo_prev_month', file=head['prev']))
-    if head.get('next'):
-        out.append(t(L, 'convo_next_month', file=head['next']))
-    if head.get('title'):
-        out.append(t(L, 'convo_opening', title=head['title']))
-    out += ['', t(L, 'convo_summaries'), SUM_START, summaries.strip() or t(L, 'convo_none'), SUM_END, '',
+    out = [_front(head), '', t(L, 'convo_summaries'), SUM_START, summaries.strip() or t(L, 'convo_none'), SUM_END, '',
             t(L, 'convo_raw_since', since=_local(through)) if through else t(L, 'convo_raw'), '']
     gone = lambda iso: any(a <= iso <= b for a, b in withdrawn or ())
     notes, place = head.get('notes') or {}, _placer(cfg)
@@ -677,12 +769,25 @@ def turn_notice(cfg, agent, data):
 
 
 # ---------------------------------------------------------------- turn end (hook)
+def _cut(text, n=TITLE_MAX):
+    """One line of at most n characters; a longer one ends at the last punctuation in its second half, with '…'."""
+    text = re.sub(r'\s+', ' ', text or '').strip()
+    if len(text) <= n:
+        return text
+    stops = [k for k, ch in enumerate(text[:n]) if ch in '。！？；，、.!?;,' and k >= n // 2]
+    return (text[:stops[-1]] if stops else text[:n - 1]).rstrip(' ，、,;；') + '…'
+
+
 def _head(cfg, agent, sid, st, msgs, prev):
     first_user = next((m[2] for m in msgs if m[1] == 'user'), '')
     first_user = IMG_TOKEN.sub(t(cfg.lang, 'convo_image_short'), first_user)
     first_user = FILE_REF.sub(lambda m: (m.group(1) or m.group(2)).replace('\\', '/').rstrip('/').rsplit('/', 1)[-1], first_user)
-    head ={'session': sid, 'agent': agent, 'who': cfg.who(), 'title': re.sub(r'\s+', ' ', first_user)[:60] or prev.get('title', ''),
+    titles = st.get('titles') or {}                               # renamed by the user > named by the app > opening message
+    title = titles.get('custom') or titles.get('ai') or titles.get('app') or _cut(first_user) or prev.get('title', '')
+    head = {'session': sid, 'agent': agent, 'who': cfg.who(), 'title': title,
             'start': msgs[0][0], 'last': msgs[-1][3], 'through': prev.get('through') or ''}
+    if prev.get('topics'):                                        # kept up to date by the agent when it compacts (0.1.34+)
+        head['topics'] = prev['topics']
     if prev.get('summarized'):                                    # summarized up to here; the verbatim text stays (0.1.25+)
         head['summarized'] = prev['summarized']
     if prev.get('notes'):                                         # one-line notes on images and outside files (0.1.30+)
@@ -744,6 +849,14 @@ def update(cfg, agent, data, idx=None):
     if st.get('path') != tpath or os.path.getsize(tpath) < int(st.get('offset') or 0):
         st = {'path': tpath, 'offset': 0, 'msgs': [], 'file': st.get('file'), 'off': st.get('off')}
     new, st['offset'], st['tip'] = _read(tpath, int(st.get('offset') or 0), PARSERS[agent], st.get('tip'))
+    for item in new:                                              # the app's own names for the session (0.1.34+)
+        if item[1].startswith('title_'):
+            st.setdefault('titles', {})[item[1][6:]] = item[2]
+    new = [item for item in new if not item[1].startswith('title_')]
+    if agent == 'codex':
+        name = _codex_title(sid)
+        if name:
+            st.setdefault('titles', {})['app'] = name
     drive = cfg.drive() if _drive_name(cfg) else None
     _flush_pending(cfg, drive)
     me, own, copied = cf.stem, [], None
@@ -875,13 +988,18 @@ def compact(cfg, file, through, summary):
     except OSError:
         print(t(L, 'convo_no_file', file=file))
         return 1
-    m = MARK.search(s)
+    head = _head_of(s)
     i, j = s.find(SUM_START), s.find(SUM_END)
-    if not m or not (m.end() <= i < j):
+    if not head or not (0 <= i < j):
         print(t(L, 'convo_no_file', file=file))
         return 1
-    head = json.loads(m.group(1))
     summary = redact(cfg, (summary or '').replace(SUM_START, '').replace(SUM_END, '').strip())
+    tm = re.match(r'\s*(?:topics|话题|主题)\s*[:：]\s*(.+)\n', summary + '\n', re.I)   # first line: topics of the whole session
+    if tm:
+        topics = [x.strip(' 「」"\'') for x in re.split(r'[,，、;；/|]', tm.group(1)) if x.strip(' 「」"\'')]
+        if topics:
+            head['topics'] = [_cut(x, 24) for x in topics][:8]
+        summary = summary[tm.end():].strip()
     if len(summary) < 20:
         print(t(L, 'convo_short'))
         return 1
@@ -897,8 +1015,11 @@ def compact(cfg, file, through, summary):
     cur = s[i + len(SUM_START):j].strip()
     block = t(L, 'convo_range', a=_local(first), b=_local(through)) + '\n\n' + summary
     head['summarized'] = through                                  # the summary is added on top; the verbatim text is kept
-    out = (s[:m.start(1)] + _dump(head) + s[m.end(1):i + len(SUM_START)] + '\n'
-           + (block if cur in ('', t(L, 'convo_none')) else cur + '\n\n' + block) + '\n' + SUM_END + body)
+    out = _rehead(cfg, s[:i + len(SUM_START)] + '\n' + (block if cur in ('', t(L, 'convo_none')) else cur + '\n\n' + block)
+                  + '\n' + SUM_END + body, head)
+    if out is None:
+        print(t(L, 'convo_no_file', file=file))
+        return 1
     _write(cfg, path, out.rstrip('\n') + '\n')
     cf = _cache(cfg, head.get('agent', ''), head.get('session', ''))
     st = _load(cf)
@@ -919,11 +1040,10 @@ def note(cfg, file, text):
     except OSError:
         print(t(L, 'convo_no_file', file=file))
         return 1
-    m = MARK.search(s)
-    if not m:
+    head, added = _head_of(s), {}
+    if not head:
         print(t(L, 'convo_no_file', file=file))
         return 1
-    head, added = json.loads(m.group(1)), {}
     for line in (text or '').splitlines():
         parts = line.strip().lstrip('-').strip().split(None, 1)
         if len(parts) < 2:
@@ -936,7 +1056,7 @@ def note(cfg, file, text):
         print(t(L, 'convo_note_none'))
         return 1
     head.setdefault('notes', {}).update(added)
-    _write(cfg, path, s[:m.start(1)] + _dump(head) + s[m.end(1):])
+    _write(cfg, path, _rehead(cfg, s, head) or s)
     cf = _cache(cfg, head.get('agent', ''), head.get('session', ''))
     st = _load(cf)
     if st.get('path') and os.path.isfile(st['path']) and head.get('agent') in PARSERS:
@@ -1035,5 +1155,55 @@ def recent(cfg, n=5):
                 rows.append((h.get('last') or '', h, p))
     rows.sort(key=lambda r: r[0], reverse=True)
     lines = [f"   {_local(last)} · {h.get('who')} · {AGENT_LABEL.get(h.get('agent'), h.get('agent'))} · "
-             f"{(h.get('title') or '')[:30]} → {p.relative_to(cfg.repo).as_posix()}" for last, h, p in rows[:n]]
+             f"{_cut(h.get('title') or '', 40)} → {p.relative_to(cfg.repo).as_posix()}" for last, h, p in rows[:n]]
     return (t(cfg.lang, 'convo_recent') + '\n' + '\n'.join(lines)) if lines else ''
+
+
+# ---------------------------------------------------------------- header format and README (0.1.34+)
+def reformat(cfg):
+    """Records this machine wrote with the old header (a title line, a JSON comment, an intro paragraph) get the YAML
+    front matter. Only this person's own records: each record is written by its owner's machine, and an older version
+    there could not read the new header of a record it is still writing. Returns how many were changed."""
+    d = _dir(cfg)
+    root = cfg.repo / d if d else None
+    if not root or not root.is_dir():
+        return 0
+    n = 0
+    for f in root.glob('*/*.md'):
+        try:
+            s = f.read_text(encoding='utf-8')
+        except OSError:
+            continue
+        if s.startswith('---\n'):
+            continue
+        head = _head_of(s)
+        if not head or head.get('who') != cfg.who():
+            continue
+        new = _rehead(cfg, s, head)
+        if new and new != s:
+            _write(cfg, f, new)
+            n += 1
+    return n
+
+
+def readme(cfg):
+    """The records folder's README explains the format (what is kept, what each front-matter field means). Written by
+    the tool so it always matches the format; a newer version's README is never replaced by an older one."""
+    d = _dir(cfg)
+    c = recording(cfg)
+    if not d or c is None:
+        return False
+    path = cfg.repo / d / 'README.md'
+    mark = f'<!-- team-sync convo-readme {__version__} -->'
+    try:
+        old = path.read_text(encoding='utf-8')
+    except OSError:
+        old = ''
+    m = re.search(r'<!-- team-sync convo-readme ([\d.]+) -->', old)
+    ver = lambda v: tuple(int(x) for x in re.findall(r'\d+', v))
+    if m and ver(m.group(1)) >= ver(__version__):
+        return False
+    text = t(cfg.lang, 'convo_readme', limit=int(c.get('compact_chars') or 30000), dir=d, att=_att_dir(cfg),
+             drive=_drive_name(cfg) or '-') + '\n\n' + mark + '\n'
+    _write(cfg, path, text)
+    return True

@@ -401,7 +401,9 @@ def _start_body(cfg, pull_ok=True):
     except Exception as e:
         lines.append(f'fingerprint: check failed ({e})')
     try:
-        from .convo import recent
+        from .convo import recent, reformat, readme
+        readme(cfg)                                               # the records folder's README, kept to this version's format
+        reformat(cfg)                                             # this person's records still in the old header format
         rc = recent(cfg)
         if rc:
             lines.append(rc)

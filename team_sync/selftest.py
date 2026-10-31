@@ -406,6 +406,68 @@ def run(cfg, keep=False):
     link.unlink(); (droot / 'NewDrive').rename(droot / 'SelfTestDrive')
     (A / CONFIG_NAME).write_text(conf0, encoding='utf-8')
 
+    print("7f record header: YAML front matter, the apps' own titles, topics, the folder README, old headers converted")
+    fmt = lambda txt: txt.split('\n---\n', 1)[0] if txt.startswith('---\n') else ''
+    ttl = lambda txt: (json.loads(m.group(1)) if (m := re.search(r'^title: (.*)$', fmt(txt), re.M)) else None)
+    tt = tmp / 'claude-titled.jsonl'
+    tstdin = json.dumps({'session_id': 'titled1', 'transcript_path': str(tt)})
+    jsonl(tt, [cu('2026-01-10T01:00:00.000Z', '这是一句很长的开场白' * 20 + '。后面还有'), ca('2026-01-10T01:00:05.000Z', tx('好的。'))])
+    ts(A, 'hook', 'claude', 'stop', stdin=tstdin)
+    rf = next(iter((A / cdir).glob('*/*_claude_titled1*.md')), None)
+    rt = rf.read_text(encoding='utf-8') if rf else ''
+    fm = fmt(rt)
+    check('the record starts with front matter (who, agent, times, time zone, session); no intro paragraph or JSON comment',
+          'who: alice' in fm and 'agent: Claude Code' in fm and 'started: 2026-01-' in fm and 'timezone: UTC' in fm
+          and 'session: titled1' in fm and 'team-sync-convo' not in rt and '\n## ' in rt, rt[:240].replace('\n', ' | '))
+    t0 = ttl(rt) or ''
+    check('no title from the app: the opening message, cut short with "…"', t0.startswith('这是一句') and t0.endswith('…') and len(t0) <= 121, t0)
+    jsonl(tt, [{'type': 'ai-title', 'aiTitle': '自动起的标题', 'sessionId': 'titled1'},
+               cu('2026-01-10T01:01:00.000Z', '第二句'), ca('2026-01-10T01:01:05.000Z', tx('收到。'))])
+    ts(A, 'hook', 'claude', 'stop', stdin=tstdin)
+    check("Claude Code: the app's generated title", ttl(rf.read_text(encoding='utf-8')) == '自动起的标题', ttl(rf.read_text(encoding='utf-8')))
+    jsonl(tt, [{'type': 'custom-title', 'customTitle': '我改的名字', 'sessionId': 'titled1'},
+               cu('2026-01-10T01:02:00.000Z', '第三句'), ca('2026-01-10T01:02:05.000Z', tx('好。'))])
+    ts(A, 'hook', 'claude', 'stop', stdin=tstdin)
+    check('Claude Code: the name the user gave it wins', ttl(rf.read_text(encoding='utf-8')) == '我改的名字', ttl(rf.read_text(encoding='utf-8')))
+    chome = tmp / 'codexhome'; chome.mkdir(exist_ok=True)
+    (chome / 'session_index.jsonl').write_text(json.dumps({'id': 'codextitle1', 'thread_name': 'Codex 起的名字'}, ensure_ascii=False) + '\n', encoding='utf-8')
+    ctr = tmp / 'rollout-2026-01-10T02-00-00-codextitle1.jsonl'
+    jsonl(ctr, [{'timestamp': '2026-01-10T02:00:00.000Z', 'type': 'session_meta', 'payload': {'id': 'codextitle1'}},
+                {'timestamp': '2026-01-10T02:00:01.000Z', 'type': 'response_item', 'payload': {'type': 'message', 'role': 'user', 'content': [{'type': 'input_text', 'text': 'codex 的第一句'}]}}])
+    ts(A, 'hook', 'codex', 'stop', stdin=json.dumps({'session_id': 'codextitle1', 'transcript_path': str(ctr)}), env=dict(TEAM_SYNC_FOREGROUND='1', CODEX_HOME=str(chome)))
+    ct = ''.join(f.read_text(encoding='utf-8') for f in (A / cdir).glob('*/*_codex_codextit*.md'))
+    check("Codex: the thread name from the app's session index", ttl(ct) == 'Codex 起的名字' and 'agent: Codex' in fmt(ct), ct[:200].replace('\n', ' | '))
+    rel = rf.relative_to(A).as_posix()
+    out = ts(A, 'convo', 'compact', '--file', rel, '--through', '2026-01-10T01:00:05.000Z',
+             stdin='topics: 开场白测试, 起标题、改名字\n- 用户说了一段很长的开场白,agent 回答好的;这是给前两条消息写的摘要。')
+    rt = rf.read_text(encoding='utf-8')
+    check('compact: the topics line goes into the front matter, not into the summary',
+          'topics: ["开场白测试", "起标题", "改名字"]' in fmt(rt) and 'summarized_through: ' in fmt(rt) and 'topics:' not in rt.split('<!-- summaries:start -->')[1], out[:120])
+    jsonl(tt, [cu('2026-01-10T01:03:00.000Z', '第四句'), ca('2026-01-10T01:03:05.000Z', tx('嗯。'))])
+    ts(A, 'hook', 'claude', 'stop', stdin=tstdin)
+    rt = rf.read_text(encoding='utf-8')
+    check('topics and the title survive the next turn', '"起标题"' in fmt(rt) and ttl(rt) == '我改的名字' and '第四句' in rt)
+    oldrec = lambda who, sid: (f'# 对话记录 · {who} · Claude Code · 2026-01-11 开始\n<!-- team-sync-convo ' + json.dumps(
+        {'session': sid, 'agent': 'claude', 'who': who, 'title': '旧格式', 'start': '2026-01-11T00:00:00.000Z', 'last': '2026-01-11T00:00:05.000Z',
+         'through': '', 'notes': {'img:0123456789abcdef.png': '旧说明'}}, ensure_ascii=False) + ' -->\n\n> team-sync 在每轮对话结束时自动写入。\n> 第一句: 旧格式\n\n'
+        '## 摘要\n<!-- summaries:start -->\n(还没有)\n<!-- summaries:end -->\n\n## 原文\n\n<!-- msg 2026-01-11T00:00:00.000Z user -->\n**01-11 11:00 · ' + who + '**\n\n旧格式\n')
+    mine, theirs = A / cdir / '2026-01' / '2026-01-11_alice_claude_oldfmt1.md', A / cdir / '2026-01' / '2026-01-11_bob_claude_oldfmt2.md'
+    mine.write_text(oldrec('alice', 'oldfmt1'), encoding='utf-8'); theirs.write_text(oldrec('bob', 'oldfmt2'), encoding='utf-8')
+    out = ts(A, 'start')
+    mt = mine.read_text(encoding='utf-8')
+    check("start: this person's old-header records get front matter (notes and session kept); a teammate's stay as they are",
+          mt.startswith('---\n') and '"img:0123456789abcdef.png": "旧说明"' in mt and 'session: oldfmt1' in mt and '第一句' not in mt
+          and '旧格式' in mt.split('## 原文')[1] and theirs.read_text(encoding='utf-8') == oldrec('bob', 'oldfmt2'), mt[:200].replace('\n', ' | '))
+    check('session start lists records in both header formats', '_bob_claude_oldfmt2' in out and '_alice_claude_oldfmt1' in out
+          and 'Codex 起的名字' in out, out[-400:].replace('\n', ' | '))
+    rd = A / cdir / 'README.md'
+    rdt = rd.read_text(encoding='utf-8') if rd.exists() else ''
+    check('the records folder has a README explaining every front-matter field', 'attachment_notes' in rdt and 'summarized_through' in rdt and 'topics' in rdt and 'convo-readme' in rdt)
+    rd.write_text(rdt.replace(re.search(r'convo-readme [\d.]+', rdt).group(0), 'convo-readme 99.0.0') if rdt else '', encoding='utf-8')
+    ts(A, 'start')
+    check("a newer version's README is not replaced by an older one", 'convo-readme 99.0.0' in rd.read_text(encoding='utf-8'))
+    rd.unlink(); mine.unlink(); theirs.unlink()
+
     print('8 journal: concurrent lines merge; auto line only at session end')
     C = tmp / 'carol'
     sh(tmp, 'git', 'clone', '-q', 'origin.git', 'carol')
