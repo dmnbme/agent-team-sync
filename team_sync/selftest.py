@@ -393,12 +393,12 @@ def run(cfg, keep=False):
     (A / 'OldLink').symlink_to(droot / 'SelfTestDrive', target_is_directory=True)
     out = ts(A, 'start', env=denv)
     link = A / 'Drive Link'
-    check('the shortcut is made and the old one removed',
-          link.is_symlink() and link.resolve() == (droot / 'SelfTestDrive').resolve() and not (A / 'OldLink').is_symlink(), out[-160:].replace('\n', ' | '))
+    check('the shortcut is made and the old one removed, and said so',
+          'error' not in out.lower() and ('Drive Link' in out) and link.is_symlink() and link.resolve() == (droot / 'SelfTestDrive').resolve() and not (A / 'OldLink').is_symlink(), out[-160:].replace('\n', ' | '))
     (droot / 'SelfTestDrive').rename(droot / 'NewDrive')                 # the drive renamed, then the config
     (A / CONFIG_NAME).write_text(json.dumps(dict(c7, drive=dict(c7['drive'], root_name='NewDrive')), ensure_ascii=False), encoding='utf-8')
     out = ts(A, 'start', env=denv)
-    check('after the rename: the shortcut points to the new name', link.is_symlink() and link.resolve() == (droot / 'NewDrive').resolve(),
+    check('after the rename: the shortcut points to the new name', 'error' not in out.lower() and link.is_symlink() and link.resolve() == (droot / 'NewDrive').resolve(),
           out[-160:].replace('\n', ' | '))
     out2 = ts(A, 'start', env=denv)
     check('the shortcut is kept out of git', 'Drive Link' not in sh(A, 'git', 'status', '--porcelain'))

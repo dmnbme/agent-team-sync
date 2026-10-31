@@ -320,7 +320,7 @@ def ensure_shortcut(cfg):
             subprocess.run(['cmd', '/c', 'mklink', '/J', str(link), str(drive)], capture_output=True, check=True)
         else:
             os.symlink(drive, link, target_is_directory=True)
-        said.append(t(cfg.lang, 'shortcut_made', name=name, drive=drive))
+        said.append(t(cfg.lang, 'shortcut_made', link=name, drive=drive))
     except (OSError, subprocess.CalledProcessError):
         pass
     return '\n'.join(said)

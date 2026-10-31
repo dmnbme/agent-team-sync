@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.33 (2026-10-31)
+
+- Fix: when `start` or a sync made or re-pointed the drive shortcut, printing the notice failed (a message placeholder clashed with an argument name), so that `start` showed an error instead of the summary. The shortcut itself was fixed.
+
 ## 0.1.32 (2026-10-31)
 
 - A folder shortcut to the shared drive, kept by the tool. With `drive.shortcut` set, `start` and every sync make sure the repository has a link of that name to the drive (a symlink on macOS and Linux, a directory junction on Windows), listed in `.git/info/exclude` so it is never committed, and re-point it when the drive moved or was renamed (after `drive.root_name` is changed to the new name). Links named in `drive.old_shortcuts` are removed. A real folder or file under the name is never touched. Before, setup scripts made the link once and nothing fixed it later.
