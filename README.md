@@ -174,6 +174,7 @@ team-sync lease release collect:telegram:main [--force]
 
 在 `team-sync.json` 里写上 `"convo": {"dir": "docs/对话记录"}` 即开启。每个会话每个月一个文件：`<dir>/年-月/<日期>_<谁>_<agent>_<会话号>.md`，日期是这个会话在这个月的第一条消息的日期，会话号是 agent 会话 ID 的前 8 位。会话跨到新的一个月时，在新月份的文件夹里接着记，两份文件开头互相链接，旧文件不再改动；这样每个月文件夹里就是那个月实际聊过的内容，单个文件也不会无限变长。
 
+- 文件开头（0.1.34 起）：YAML front matter，字段有 `title`、`topics`、`who`、`agent`、`started`、`updated`、`timezone`，以及给工具用的 `session`、`summarized_through`、`attachment_notes` 等。`title` 依次取用户在 app 侧边栏里给会话改的名字、app 自动起的标题（Claude Code 记录里的标题条目、Codex 的会话索引）、第一句话（太长时在标点处截断）。`topics` 由 agent 补写摘要时顺带更新。每个字段的意思写在记录文件夹的 `README.md` 里，那份由工具生成，换版本时更新，不会被旧版本覆盖。旧格式的记录，每台电脑升级后只转换自己的那些（别人的电脑可能还是旧版本，读不懂新开头）；新版本两种格式都能读。
 - 不记：工具调用、工具输出、思考过程、注入的上下文。记：双方说的话，以及用户在选择题里点的答案。
 - 脱敏：密钥形状的字符串换成 `[redacted]`；邮箱地址换成 `[email]`，`keep_email_domains` 里列出的域名除外。
 - 摘要：还没写摘要的原文超过 `compact_chars` 时，hook 在这一轮结束时请正在运行的 agent 给较早的部分写摘要，再运行 `team-sync convo compact`；摘要加在文件开头，原文全部保留（0.1.25 起；之前的版本会删掉写过摘要的原文）。最新的 `keep_recent_chars` 不写进这次摘要。

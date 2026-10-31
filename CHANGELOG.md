@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.34 (2026-10-31)
+
+- Records start with YAML front matter instead of a title line, a hidden JSON comment and a paragraph explaining the format in every file. Fields a person reads: `title`, `topics`, `who`, `agent`, `started`, `updated`, `timezone`, `continued_from`, `prev_month`, `next_month`; fields for the tool: `session`, `earlier_sessions`, `summarized_through`, `hidden_through`, `attachment_notes`. Simple values are plain, others JSON, so any YAML reader loads it.
+- Titles. The title was the opening message cut at 60 characters, often mid-word and often saying little ("ok", a forwarded message). It is now the name the user gave the session in the app's sidebar, else the app's own generated title (Claude Code's title entries in the transcript, the thread name in Codex's session index), else the opening message cut at a punctuation mark with "…" (120 characters at most). Sessions recorded before look once through their transcript for the app's titles.
+- Topics. When the hook asks the agent to summarize, it also asks for one line `topics: a, b, c` covering the whole session so far; `convo compact` puts them into the front matter and keeps them out of the summary.
+- The format is explained once, in a `README.md` the tool writes into the records folder (in the team's language), updated with each version and never replaced by an older one.
+- Old records are converted at session start, each machine its own only, because a teammate's machine still on an older version could not read the new header of a record it keeps writing. The new version reads both formats; the session-start list shows titles up to 40 characters.
+
 ## 0.1.33 (2026-10-31)
 
 - Fix: when `start` or a sync made or re-pointed the drive shortcut, printing the notice failed (a message placeholder clashed with an argument name), so that `start` showed an error instead of the summary. The shortcut itself was fixed.

@@ -225,6 +225,29 @@ def _codex_title(sid):
     return name
 
 
+def _app_titles(agent, sid, tpath):
+    """The names the app gave the session, read from the whole transcript (Claude Code) or the session index (Codex).
+    For sessions recorded before 0.1.34, whose title entries were read before the tool looked for them."""
+    if agent == 'codex':
+        name = _codex_title(sid)
+        return {'app': name} if name else {}
+    out = {}
+    try:
+        with open(tpath, encoding='utf-8', errors='replace') as f:
+            for line in f:
+                if '-title"' in line:
+                    try:
+                        d = json.loads(line)
+                    except ValueError:
+                        continue
+                    for item in _claude(d) if isinstance(d, dict) else []:
+                        if item[1].startswith('title_'):
+                            out[item[1][6:]] = item[2]
+    except (OSError, TypeError):
+        pass
+    return out
+
+
 def codex_is_exec(data):
     """True for a scripted `codex exec` run (session_meta source=exec): batch jobs, not conversations."""
     sid = re.sub(r'[^A-Za-z0-9_-]', '', str(data.get('session_id') or ''))
@@ -319,6 +342,7 @@ FRONT = (('title', 'title'), ('topics', 'topics'), ('who', 'who'), ('agent', 'ag
          ('updated', 'last'), ('timezone', None), ('continued_from', 'parent'), ('prev_month', 'prev'),
          ('next_month', 'next'), ('session', 'session'), ('earlier_sessions', 'earlier_sessions'),
          ('summarized_through', 'summarized'), ('hidden_through', 'through'), ('attachment_notes', 'notes'))
+FIRST_USER = re.compile(r'<!-- msg \S+ user -->\n\*\*[^\n]*\*\*\n\n(.*?)(?=\n<!-- msg |\n</?details>|\Z)', re.S)
 PLAIN = re.compile(r'[\w][\w .:+/-]*')
 
 
@@ -849,6 +873,8 @@ def update(cfg, agent, data, idx=None):
     if st.get('path') != tpath or os.path.getsize(tpath) < int(st.get('offset') or 0):
         st = {'path': tpath, 'offset': 0, 'msgs': [], 'file': st.get('file'), 'off': st.get('off')}
     new, st['offset'], st['tip'] = _read(tpath, int(st.get('offset') or 0), PARSERS[agent], st.get('tip'))
+    if 'titles' not in st:                                        # a session recorded before 0.1.34: look once through what was read
+        st['titles'] = _app_titles(agent, sid, tpath)
     for item in new:                                              # the app's own names for the session (0.1.34+)
         if item[1].startswith('title_'):
             st.setdefault('titles', {})[item[1][6:]] = item[2]
@@ -1179,6 +1205,11 @@ def reformat(cfg):
         head = _head_of(s)
         if not head or head.get('who') != cfg.who():
             continue
+        st = _load(_cache(cfg, head.get('agent', ''), head.get('session', '')))
+        titles = st.get('titles') or (_app_titles(head.get('agent'), head.get('session', ''), st.get('path')) if st.get('path') or head.get('agent') == 'codex' else {})
+        first = FIRST_USER.search(s)
+        head['title'] = (titles.get('custom') or titles.get('ai') or titles.get('app')
+                         or (_cut(first.group(1)) if first else '') or head.get('title', ''))
         new = _rehead(cfg, s, head)
         if new and new != s:
             _write(cfg, f, new)
