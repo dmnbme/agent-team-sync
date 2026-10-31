@@ -137,7 +137,7 @@ Main fields of `team-sync.json`:
 }
 ```
 
-`version` pins the team's version: when a member's installed version differs, the opening summary says so, and the rules tell the agent to run `team-sync upgrade`. Without `convo`, conversations are not recorded; without `inbox`, messages are off.
+`version` pins the team's version: when a member's installed version differs, the opening summary says so, and the rules tell the agent to run `team-sync upgrade`. Without `convo`, conversations are not recorded; without `inbox`, messages are off. With `drive.shortcut` set to a name (such as `"Team Drive"`), every machine gets a folder link of that name in the repository pointing to the shared drive (a symlink on macOS, a directory junction on Windows; kept out of git), re-pointed when the drive moves or is renamed; when the shortcut itself is renamed, list the old names under `drive.old_shortcuts` and those links are removed (links only, never a real folder). (From 0.1.32.)
 
 ## Member: set up a machine (once)
 

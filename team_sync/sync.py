@@ -273,13 +273,69 @@ def start(cfg):
         _start_body(cfg, pull_ok=got)
 
 
+def _link_target(p):
+    """Where a symlink or Windows junction points, or None for anything else (a real folder is never touched)."""
+    try:
+        return os.readlink(p)
+    except (OSError, ValueError, NotImplementedError):
+        return None
+
+
+def ensure_shortcut(cfg):
+    """drive.shortcut: a folder link in the repo to the shared drive. Made when missing, re-pointed when the drive moved
+    or was renamed; links under drive.old_shortcuts are removed. Quiet unless something changed."""
+    d = cfg.data.get('drive') or {}
+    name = (d.get('shortcut') or '').strip('/\\')
+    if not name:
+        return ''
+    drive, link, said = cfg.drive(), cfg.repo / name, []
+    win = platform.system() == 'Windows'
+    for old in d.get('old_shortcuts') or []:
+        op = cfg.repo / old.strip('/\\')
+        if old and op != link and _link_target(op) is not None:
+            try:
+                os.rmdir(op) if win else os.unlink(op)
+                said.append(t(cfg.lang, 'shortcut_old', old=old))
+            except OSError:
+                pass
+    if drive is None:
+        return '\n'.join(said)
+    exclude = cfg.repo / '.git' / 'info' / 'exclude'               # the link is per machine: never committed
+    try:
+        have = exclude.read_text(encoding='utf-8') if exclude.exists() else ''
+        if f'/{name}' not in have.splitlines():
+            exclude.parent.mkdir(parents=True, exist_ok=True)
+            exclude.write_text(have.rstrip('\n') + ('\n' if have.strip() else '') + f'/{name}\n', encoding='utf-8')
+    except OSError:
+        pass
+    cur = _link_target(link)
+    if cur is not None and os.path.normcase(os.path.realpath(link)) == os.path.normcase(os.path.realpath(drive)):
+        return '\n'.join(said)
+    if cur is None and (link.exists() or link.is_symlink()):
+        return '\n'.join(said)                                    # a real folder or file under that name: leave it
+    try:
+        if cur is not None:
+            os.rmdir(link) if win else os.unlink(link)
+        if win:
+            subprocess.run(['cmd', '/c', 'mklink', '/J', str(link), str(drive)], capture_output=True, check=True)
+        else:
+            os.symlink(drive, link, target_is_directory=True)
+        said.append(t(cfg.lang, 'shortcut_made', name=name, drive=drive))
+    except (OSError, subprocess.CalledProcessError):
+        pass
+    return '\n'.join(said)
+
+
 def _start_body(cfg, pull_ok=True):
     ensure_hook(cfg)
     ensure_attrs(cfg)
+    linked = ensure_shortcut(cfg)
     lines = [t(cfg.lang, 'header', holder=cfg.holder(), now=f'{dt.datetime.now():%Y-%m-%d %H:%M}')]
     ident = ensure_identity(cfg)
     if ident:
         lines.append(ident)
+    if linked:
+        lines.append(linked)
     marker = state(cfg, 'conflict.txt')
     if marker.exists():
         lines.append(t(cfg.lang, 'conflict_pending') + '\n   ' + marker.read_text(encoding='utf-8').strip().replace('\n', '\n   '))
@@ -402,6 +458,9 @@ def _session_files(cfg, staged):
 def _stop_body(cfg, session_end=False):
     ensure_hook(cfg)
     ensure_attrs(cfg)
+    linked = ensure_shortcut(cfg)
+    if linked:
+        print(linked)
     staged = _stage(cfg)
     if session_end:                                             # one journal line per session, not one per autosync run
         files = _session_files(cfg, staged)

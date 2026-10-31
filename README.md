@@ -137,7 +137,7 @@ git add -A && git commit -m "team-sync" && git push
 }
 ```
 
-`version` 锁定团队使用的版本：成员电脑上的版本不一致时，开头摘要会提示，守则让 agent 直接运行 `team-sync upgrade`。`convo` 不写就不记录对话，`inbox` 不写就不开留言。`notify.icon` 是桌面通知用的图标（仓库里的一张方形 PNG 或 icns），不写就用系统的同步图标。
+`version` 锁定团队使用的版本：成员电脑上的版本不一致时，开头摘要会提示，守则让 agent 直接运行 `team-sync upgrade`。`convo` 不写就不记录对话，`inbox` 不写就不开留言。`notify.icon` 是桌面通知用的图标（仓库里的一张方形 PNG 或 icns），不写就用系统的同步图标。`drive.shortcut` 写一个名字（如 `"Team Drive"`），每台电脑的仓库里就自动有一个同名的快捷方式指向共享盘（macOS 是符号链接，Windows 是目录联接，不进 git），共享盘挂载位置变了或改名了会自动改指向；快捷方式改过名字时把旧名字写进 `drive.old_shortcuts`，旧的快捷方式会被删掉（只删链接，不碰真文件夹）。（0.1.32 起）
 
 ## 成员：配置电脑（一次）
 

@@ -1,6 +1,7 @@
 """Background sync independent of any agent: a scheduler runs `team-sync stop` every N minutes.
 macOS: launchd user agent · Windows: Task Scheduler (pythonw, no console) · Linux: systemd user timer."""
 import os
+import re
 import platform
 import subprocess
 import sys
@@ -22,6 +23,11 @@ def _python():
     return exe
 
 
+def _slug(cfg):
+    """The repository folder name as a job name: launchd, Task Scheduler and systemd all accept it (no spaces)."""
+    return re.sub(r'[^A-Za-z0-9._-]+', '-', cfg.repo.name).strip('-') or 'repo'
+
+
 def on(cfg):
     interval = int(cfg.data['sync'].get('autosync_interval_sec', 300)); cfg.state_dir.mkdir(parents=True, exist_ok=True)
     py, repo, log = _python(), str(cfg.repo), str(_log(cfg))
@@ -29,13 +35,13 @@ def on(cfg):
     args = [str(shim), 'stop'] if shim.exists() else ['-m', 'team_sync', 'stop']
     sysname = platform.system()
     if sysname == 'Darwin':
-        plist = os.path.expanduser(f'~/Library/LaunchAgents/{LABEL}.{cfg.repo.name}.plist')
+        plist = os.path.expanduser(f'~/Library/LaunchAgents/{LABEL}.{_slug(cfg)}.plist')
         os.makedirs(os.path.dirname(plist), exist_ok=True)
         with open(plist, 'w', encoding='utf-8') as f:
             f.write(f'''<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>Label</key><string>{LABEL}.{cfg.repo.name}</string>
+  <key>Label</key><string>{LABEL}.{_slug(cfg)}</string>
   <key>ProgramArguments</key><array><string>{py}</string>{''.join(f'<string>{a}</string>' for a in args)}</array>
   <key>WorkingDirectory</key><string>{repo}</string>
   <key>StartInterval</key><integer>{interval}</integer>
@@ -49,12 +55,12 @@ def on(cfg):
   </dict>
 </dict></plist>''')
         uid = os.getuid()
-        subprocess.run(['launchctl', 'bootout', f'gui/{uid}/{LABEL}.{cfg.repo.name}'], capture_output=True)
+        subprocess.run(['launchctl', 'bootout', f'gui/{uid}/{LABEL}.{_slug(cfg)}'], capture_output=True)
         r = subprocess.run(['launchctl', 'bootstrap', f'gui/{uid}', plist], capture_output=True, text=True)
         if r.returncode != 0:
             print(r.stderr.strip()); return 1
     elif sysname == 'Windows':
-        task = f'team-sync autosync {cfg.repo.name}'
+        task = f'team-sync autosync {_slug(cfg)}'
         ps = (f"$a = New-ScheduledTaskAction -Execute '{py}' -Argument '{' '.join(chr(34) + a + chr(34) if ' ' in a else a for a in args)}' -WorkingDirectory '{repo}'; "
               f"$tr = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Seconds {interval}); "   # no -RepetitionDuration = indefinitely; [TimeSpan]::MaxValue is refused on Windows 10
               "$s = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 10) -MultipleInstances IgnoreNew -StartWhenAvailable; "
@@ -64,7 +70,7 @@ def on(cfg):
             print(r.stderr.strip()); return 1
     elif sysname == 'Linux':
         d = os.path.expanduser('~/.config/systemd/user'); os.makedirs(d, exist_ok=True)
-        name = f'team-sync-{cfg.repo.name}'
+        name = f'team-sync-{_slug(cfg)}'
         cmd = ' '.join(args)                                     # kept out of the f-string: reusing the quote inside needs Python 3.12+
         open(f'{d}/{name}.service', 'w').write(f'[Unit]\nDescription=team-sync autosync {repo}\n[Service]\nType=oneshot\nWorkingDirectory={repo}\nEnvironment=TEAM_SYNC_REPO={repo}\nExecStart={py} {cmd}\nStandardOutput=append:{log}\nStandardError=append:{log}\n')
         open(f'{d}/{name}.timer', 'w').write(f'[Unit]\nDescription=team-sync autosync timer\n[Timer]\nOnBootSec=1min\nOnUnitActiveSec={interval}s\n[Install]\nWantedBy=timers.target\n')
@@ -80,25 +86,25 @@ def on(cfg):
 def off(cfg):
     sysname = platform.system()
     if sysname == 'Darwin':
-        subprocess.run(['launchctl', 'bootout', f'gui/{os.getuid()}/{LABEL}.{cfg.repo.name}'], capture_output=True)
-        p = os.path.expanduser(f'~/Library/LaunchAgents/{LABEL}.{cfg.repo.name}.plist')
+        subprocess.run(['launchctl', 'bootout', f'gui/{os.getuid()}/{LABEL}.{_slug(cfg)}'], capture_output=True)
+        p = os.path.expanduser(f'~/Library/LaunchAgents/{LABEL}.{_slug(cfg)}.plist')
         if os.path.exists(p):
             os.remove(p)
     elif sysname == 'Windows':
-        subprocess.run(['powershell', '-NoProfile', '-Command', f"Unregister-ScheduledTask -TaskName 'team-sync autosync {cfg.repo.name}' -Confirm:$false -ErrorAction SilentlyContinue"], capture_output=True)
+        subprocess.run(['powershell', '-NoProfile', '-Command', f"Unregister-ScheduledTask -TaskName 'team-sync autosync {_slug(cfg)}' -Confirm:$false -ErrorAction SilentlyContinue"], capture_output=True)
     elif sysname == 'Linux':
-        subprocess.run(['systemctl', '--user', 'disable', '--now', f'team-sync-{cfg.repo.name}.timer'], capture_output=True)
+        subprocess.run(['systemctl', '--user', 'disable', '--now', f'team-sync-{_slug(cfg)}.timer'], capture_output=True)
     print(t(cfg.lang, 'autosync_off')); return 0
 
 
 def status(cfg):
     sysname = platform.system(); interval = int(cfg.data['sync'].get('autosync_interval_sec', 300)); running = False
     if sysname == 'Darwin':
-        running = subprocess.run(['launchctl', 'print', f'gui/{os.getuid()}/{LABEL}.{cfg.repo.name}'], capture_output=True).returncode == 0
+        running = subprocess.run(['launchctl', 'print', f'gui/{os.getuid()}/{LABEL}.{_slug(cfg)}'], capture_output=True).returncode == 0
     elif sysname == 'Windows':
-        running = subprocess.run(['powershell', '-NoProfile', '-Command', f"if (Get-ScheduledTask -TaskName 'team-sync autosync {cfg.repo.name}' -ErrorAction SilentlyContinue) {{ exit 0 }} else {{ exit 1 }}"], capture_output=True).returncode == 0
+        running = subprocess.run(['powershell', '-NoProfile', '-Command', f"if (Get-ScheduledTask -TaskName 'team-sync autosync {_slug(cfg)}' -ErrorAction SilentlyContinue) {{ exit 0 }} else {{ exit 1 }}"], capture_output=True).returncode == 0
     elif sysname == 'Linux':
-        running = subprocess.run(['systemctl', '--user', 'is-active', f'team-sync-{cfg.repo.name}.timer'], capture_output=True).returncode == 0
+        running = subprocess.run(['systemctl', '--user', 'is-active', f'team-sync-{_slug(cfg)}.timer'], capture_output=True).returncode == 0
     print(t(cfg.lang, 'autosync_running', min=interval // 60, repo=cfg.repo, log=_log(cfg)) if running else t(cfg.lang, 'autosync_stopped')); return 0
 
 

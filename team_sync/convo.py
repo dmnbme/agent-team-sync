@@ -395,11 +395,14 @@ def _placer(cfg):
     repo = str(cfg.repo).replace('\\', '/').rstrip('/') + '/'
     root = _drive_name(cfg)
     drive = cfg.drive() if root else None
-    dprefix = str(drive).replace('\\', '/').rstrip('/') + '/' if drive else None
+    dprefix = os.path.realpath(str(drive)).replace('\\', '/').rstrip('/') + '/' if drive else None
     cloud = re.compile(r'(CloudStorage|Google ?Drive|GoogleDrive|共享云端硬盘|Shared drives|My Drive|OneDrive|Dropbox)')
 
     def place(raw):
         p = os.path.expanduser(raw.strip()).replace('\\', '/')
+        real = os.path.realpath(p).replace('\\', '/')
+        if dprefix and real != p and real.startswith(dprefix):      # through a shortcut to the drive, e.g. <repo>/CSCA Drive/…
+            p = real
         if p.startswith(repo):
             return 'repo', p[len(repo):], p
         if dprefix and p.startswith(dprefix):

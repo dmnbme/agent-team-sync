@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.32 (2026-10-31)
+
+- A folder shortcut to the shared drive, kept by the tool. With `drive.shortcut` set, `start` and every sync make sure the repository has a link of that name to the drive (a symlink on macOS and Linux, a directory junction on Windows), listed in `.git/info/exclude` so it is never committed, and re-point it when the drive moved or was renamed (after `drive.root_name` is changed to the new name). Links named in `drive.old_shortcuts` are removed. A real folder or file under the name is never touched. Before, setup scripts made the link once and nothing fixed it later.
+- A file mentioned through such a shortcut (`<repo>/<shortcut>/…`) is shown as a drive path in conversation records, not as a repository path.
+- The selftest never uses the team's real shared drive, from its first step.
+- Background sync job names no longer carry spaces or other odd characters from the repository folder name (`My Team` → `My-Team`); systemd rejects them. Names without such characters are unchanged.
+
 ## 0.1.31 (2026-10-31)
 
 - Codex app attachments are placed. The Codex desktop app does not @-mention attached files; it puts a list ahead of the message ("# Files mentioned by the user:", one "## name: path" per file, "Image attachment: true" under images, then "## My request:"), so 0.1.30 left the whole list, with one machine's paths, in the record. The list is now read like @-mentions: files are placed (repository path, `Drive:<drive>/…`, or name only, with a note asked for outside files), an image already sent with the message is shown once, and the boilerplate is dropped. The IDE extension's context (active file, open tabs) is dropped too: the user did not mention those.
