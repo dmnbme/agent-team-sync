@@ -44,7 +44,7 @@
 活跃租约: collect:telegram:main←bob@desk:9911
 data/: 与清单一致(3221 文件,清单由 alice 于 2026-09-07 生成)
 最近的对话记录(想知道之前聊过什么,打开对应文件):
-   09-09 09:38 · bob · Codex · 价格页改成按地区显示币种 → docs/对话记录/2026-09/2026-09-09_bob_codex_01a0f3c2.md
+   09-09 09:38 · bob · Codex · 价格页改成按地区显示币种 → docs/对话记录/2026-09/bob/2026-09-09_bob_codex_01a0f3c2.md
 Drive: /Users/alice/Library/CloudStorage/GoogleDrive-…/Shared drives/Team
    一级文件夹: 合同 · 素材 · 报告
 规则见 AGENTS.md;要占用共享资源时通过脚本自动拿租约,不要手动绕过。

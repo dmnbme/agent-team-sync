@@ -44,7 +44,7 @@ Latest journal entries:
 Active leases: collect:telegram:main←bob@desk:9911
 data/: matches manifest (3221 files, by alice on 2026-09-07)
 Recent conversation records (open one to see what was discussed):
-   09-09 09:38 · bob · Codex · show prices in the visitor's currency → docs/conversations/2026-09/2026-09-09_bob_codex_01a0f3c2.md
+   09-09 09:38 · bob · Codex · show prices in the visitor's currency → docs/conversations/2026-09/bob/2026-09-09_bob_codex_01a0f3c2.md
 Drive: /Users/alice/Library/CloudStorage/GoogleDrive-…/Shared drives/Team
    folders: Contracts · Assets · Reports
 Rules: see AGENTS.md. Take a lease through the scripts before touching shared resources.
