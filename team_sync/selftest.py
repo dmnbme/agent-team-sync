@@ -125,7 +125,7 @@ def run(cfg, keep=False):
     check('Stop prints only JSON', out.strip() == '{}', out[:80])
     pushed = sh(tmp, 'git', '--git-dir', 'origin.git', 'log', '-1', '--name-only', '--format=')
     check('Stop commits + pushes the turn, record included', 'selftest_codex.md' in pushed and '_codex_selftest.md' in pushed, pushed.replace('\n', ' ')[:120])
-    rec = next(iter((A / cdir).glob('*/*_codex_*.md')), None)
+    rec = next(iter((A / cdir).glob('*/*/*_codex_*.md')), None)
     body = rec.read_text(encoding='utf-8') if rec else ''
     check('Codex record: user + agent text only', '帮我把招生情报整理成表格' in body and '表格已经放好了' in body
           and not any(x in body for x in ('INJECTED-SHOULD', 'ENV-SHOULD', 'TOOL-SHOULD')))
@@ -135,7 +135,7 @@ def run(cfg, keep=False):
                um('2026-01-02T01:00:01.000Z', 'SCRIPTED-EXEC-SHOULD-NOT-BE-RECORDED')])
     (A / jdir / 'selftest_exec.md').write_text('changed during a scripted run\n', encoding='utf-8')
     out = ts(A, 'hook', 'codex', 'stop', stdin=json.dumps({'session_id': 'selftestexec1', 'transcript_path': str(ex)}), env={'TEAM_SYNC_FOREGROUND': '1'})
-    check('scripted `codex exec` run: no record, no sync', out.strip() == '{}' and not list((A / cdir).glob('*/*_codex_selftes*xec*.md'))
+    check('scripted `codex exec` run: no record, no sync', out.strip() == '{}' and not list((A / cdir).glob('*/*/*_codex_selftes*xec*.md'))
           and 'selftest_exec.md' not in sh(tmp, 'git', '--git-dir', 'origin.git', 'log', '-1', '--name-only', '--format='))
 
     print('7 Claude Code conversation record')
@@ -155,7 +155,7 @@ def run(cfg, keep=False):
     stdin = lambda **kw: json.dumps(dict({'session_id': 'selftestclaude1', 'transcript_path': str(tr), 'hook_event_name': 'Stop'}, **kw))
     out = ts(A, 'hook', 'claude', 'stop', stdin=stdin())
     check('short record: Stop returns empty JSON', out.strip() == '{}', out[:80])
-    rec = next(iter((A / cdir).glob('*/*_claude_*.md')), None)
+    rec = next(iter((A / cdir).glob('*/*/*_claude_*.md')), None)
     body = rec.read_text(encoding='utf-8') if rec else ''
     check('both sides, mid-turn message, question and answer', all(x in body for x in (
         '把首页标题改短一点', '先看一下首页', '顺便把副标题也改了', '[question] 副标题用哪版?', '[answer] 副标题用哪版? → 短版', '改好了')))
@@ -186,7 +186,7 @@ def run(cfg, keep=False):
     tr2 = tmp / 'claude-selftest-2.jsonl'
     jsonl(tr2, [cu('2026-01-04T00:00:00.000Z', '不记录这段对话。帮我看看这份私人文件'), ca('2026-01-04T00:00:05.000Z', tx('好的。'))])
     ts(A, 'hook', 'claude', 'stop', stdin=json.dumps({'session_id': 'norecord1', 'transcript_path': str(tr2)}))
-    allrec = lambda: ''.join(f.read_text(encoding='utf-8') for f in (A / cdir).glob('*/*.md'))
+    allrec = lambda: ''.join(f.read_text(encoding='utf-8') for f in (A / cdir).glob('*/*/*.md'))
     check('"不记录这段对话": nothing from that message on is written', '私人文件' not in allrec() and '好的。' not in allrec())
     # pause after two turns, chat while paused, resume; then the same with "恢复记录并补上" (a false trigger put right)
     for sid, resume, held_back in (('pauseresume1', '恢复记录', False), ('pausefill1', '恢复记录并补上', True)):
@@ -205,7 +205,7 @@ def run(cfg, keep=False):
         check(f'{sid}: the resume prompt says so', '▶' in (json.loads(raw).get('systemMessage') or ''), raw[:80])
         jsonl(tr, [cu('2026-01-06T00:03:00.000Z', resume), ca('2026-01-06T00:03:05.000Z', tx(f'{sid} 恢复以后的回答'))])
         ts(A, 'hook', 'claude', 'stop', stdin=stdin)
-        rec = next(iter((A / cdir).glob(f'*/*_{sid[:8]}.md')), None)
+        rec = next(iter((A / cdir).glob(f'*/*/*_{sid[:8]}.md')), None)
         body = rec.read_text(encoding='utf-8') if rec else ''
         ok = f'{sid} 公开回答' in body and '⏸' in body and '▶' in body and f'{sid} 恢复以后的回答' in body
         ok = ok and ((f'{sid} 私下的回答' in body) if held_back else (f'{sid} 私下的回答' not in body))
@@ -215,14 +215,14 @@ def run(cfg, keep=False):
     tr3 = tmp / 'claude-askabout.jsonl'
     jsonl(tr3, [cu('2026-01-04T01:00:00.000Z', '我说「不记录这段对话」就不会被记下来吗?'), ca('2026-01-04T01:00:05.000Z', tx('对,说了就不记。'))])
     ts(A, 'hook', 'claude', 'stop', stdin=json.dumps({'session_id': 'askabout1', 'transcript_path': str(tr3)}))
-    check('asking about the switch does not turn recording off', bool(list((A / cdir).glob('*/*_askabou*.md'))))
+    check('asking about the switch does not turn recording off', bool(list((A / cdir).glob('*/*/*_askabou*.md'))))
     trm = tmp / 'claude-months.jsonl'
     jsonl(trm, [cu('2026-01-15T03:00:00.000Z', '一月的问题'), ca('2026-01-15T03:00:05.000Z', tx('一月的回答'))])
     mstdin = json.dumps({'session_id': 'monthroll1', 'transcript_path': str(trm)})
     ts(A, 'hook', 'claude', 'stop', stdin=mstdin)
     jsonl(trm, [cu('2026-02-15T03:00:00.000Z', '二月接着问'), ca('2026-02-15T03:00:05.000Z', tx('二月的回答'))])
     ts(A, 'hook', 'claude', 'stop', stdin=mstdin)
-    jan = next(iter((A / cdir).glob('2026-01/*_monthrol.md')), None); feb = next(iter((A / cdir).glob('2026-02/*_monthrol.md')), None)
+    jan = next(iter((A / cdir).glob('alice/2026-01/*_monthrol.md')), None); feb = next(iter((A / cdir).glob('alice/2026-02/*_monthrol.md')), None)
     jt = jan.read_text(encoding='utf-8') if jan else ''; ft = feb.read_text(encoding='utf-8') if feb else ''
     check('a session that runs into a new month goes on in a new file, linked both ways',
           '一月的回答' in jt and '二月' not in jt.split('## ')[-1] and '二月的回答' in ft and '一月的回答' not in ft
@@ -240,14 +240,14 @@ def run(cfg, keep=False):
     jsonl(pr, base + [dict(cu('2026-01-05T00:05:00.000Z', '恢复之后接着问'), uuid='u3', sessionId='resumesess'),
                       dict(ca('2026-01-05T00:05:10.000Z', tx('恢复之后的回答')), uuid='u4', sessionId='resumesess')])
     ts(A, 'hook', 'claude', 'stop', stdin=json.dumps({'session_id': 'resumesess', 'transcript_path': str(pr)}))
-    pf = next(iter((A / cdir).glob('*/*_claude_parentse*.md')), None)
+    pf = next(iter((A / cdir).glob('*/*/*_claude_parentse*.md')), None)
     pt = pf.read_text(encoding='utf-8') if pf else ''
     check('resumed session: goes on in the same file, nothing repeated', '恢复之后接着问' in pt and pt.split('<!-- summaries:end -->')[-1].count('父会话的第一个问题') == 1
-          and 'parentsess' in pt and not list((A / cdir).glob('*/*_claude_resumese*.md')))
+          and 'parentsess' in pt and not list((A / cdir).glob('*/*/*_claude_resumese*.md')))
     jsonl(pb, base[:1] + [dict(cu('2026-01-05T00:06:00.000Z', '从中间分出去的问题'), uuid='u5', sessionId='branchsess'),
                           dict(ca('2026-01-05T00:06:10.000Z', tx('分支的回答')), uuid='u6', sessionId='branchsess')])
     ts(A, 'hook', 'claude', 'stop', stdin=json.dumps({'session_id': 'branchsess', 'transcript_path': str(pb)}))
-    fk = next(iter((A / cdir).glob('*/*_claude_branchse*.md')), None)
+    fk = next(iter((A / cdir).glob('*/*/*_claude_branchse*.md')), None)
     fb = fk.read_text(encoding='utf-8') if fk else ''
     check('branch from the middle: its own file, only its own messages, linked back', '从中间分出去的问题' in fb
           and '父会话的第一个问题' not in fb.split('<!-- summaries:end -->')[-1] and '_claude_parentse' in fb)
@@ -255,7 +255,7 @@ def run(cfg, keep=False):
                       dict(ca('2026-01-05T00:07:10.000Z', tx('原会话的回答')), uuid='u8', sessionId='parentsess')])
     ts(A, 'hook', 'claude', 'stop', stdin=json.dumps({'session_id': 'parentsess', 'transcript_path': str(pa)}))
     pt2 = pf.read_text(encoding='utf-8') if pf else ''
-    later = [p for p in (A / cdir).glob('*/*_claude_parentse*.md') if p != pf]
+    later = [p for p in (A / cdir).glob('*/*/*_claude_parentse*.md') if p != pf]
     lt = later[0].read_text(encoding='utf-8') if later else ''
     check('earlier session used again after a takeover: new file, the shared one untouched', '原会话又接着说' in lt
           and '原会话又接着说' not in pt2 and '恢复之后接着问' in pt2 and pf.name in lt, [p.name for p in later])
@@ -272,7 +272,7 @@ def run(cfg, keep=False):
     jsonl(rw, [dict(cu('2026-01-07T00:02:00.000Z', '回退以后重新问'), uuid='r5', parentUuid='r2'),
                dict(ca('2026-01-07T00:02:05.000Z', tx('回退以后的回答')), uuid='r6', parentUuid='r5')])
     ts(A, 'hook', 'claude', 'stop', stdin=rstdin)
-    rf = next(iter((A / cdir).glob('*/*_claude_rewindcl*.md')), None)
+    rf = next(iter((A / cdir).glob('*/*/*_claude_rewindcl*.md')), None)
     rb = rf.read_text(encoding='utf-8') if rf else ''
     check('Claude Code rewind: the taken-back turn is folded as withdrawn, kept verbatim; the rest as usual',
           folded(rb, '会被撤回的问题') and folded(rb, '会被撤回的回答') and not folded(rb, '撤回测试第一答')
@@ -292,7 +292,7 @@ def run(cfg, keep=False):
     jsonl(cr, [{'timestamp': '2026-01-07T01:02:00.000Z', 'type': 'event_msg', 'payload': {'type': 'thread_rolled_back', 'num_turns': 1}},
                um('2026-01-07T01:02:01.000Z', 'codex 重新问'), am('2026-01-07T01:02:02.000Z', 'codex 重新答')])
     ts(A, 'hook', 'codex', 'stop', stdin=cstdin, env={'TEAM_SYNC_FOREGROUND': '1'})
-    cf_ = next(iter((A / cdir).glob('*/*_codex_rewindco*.md')), None)
+    cf_ = next(iter((A / cdir).glob('*/*/*_codex_rewindco*.md')), None)
     cb = cf_.read_text(encoding='utf-8') if cf_ else ''
     check('Codex rollback: the last turn is folded as withdrawn, the new one recorded',
           folded(cb, 'codex 撤回的问') and folded(cb, 'codex 撤回的答') and not folded(cb, 'codex 第一答') and 'codex 重新答' in cb
@@ -311,7 +311,7 @@ def run(cfg, keep=False):
     out = ts(A, 'hook', 'claude', 'stop', stdin=astdin(), env=denv)
     saved = list((droot / 'SelfTestDrive').rglob('*.png'))
     check('pasted image saved once to <drive>/<attachments>/<month>/', len(saved) == 1 and saved[0].parent.name == '2026-01', [p.name for p in saved])
-    rec = next(iter((A / cdir).glob('*/*_claude_attach1*.md')), None)
+    rec = next(iter((A / cdir).glob('*/*/*_claude_attach1*.md')), None)
     body = rec.read_text(encoding='utf-8') if rec else ''
     check('record shows the drive path, the repo-relative path and only the outside file\'s name',
           f'Drive:SelfTestDrive/' in body and saved and saved[0].name in body and '@docs/plan.md' in body
@@ -343,7 +343,7 @@ def run(cfg, keep=False):
                      {'type': 'input_image', 'image_url': 'data:image/png;base64,' + other, 'detail': 'high'},
                      {'type': 'input_text', 'text': '</image>'}, {'type': 'input_text', 'text': 'codex 贴图的问题'}]}}])
     ts(A, 'hook', 'codex', 'stop', stdin=json.dumps({'session_id': 'codeximg1', 'transcript_path': str(cimg)}), env=dict(denv, TEAM_SYNC_FOREGROUND='1'))
-    cb = ''.join(f.read_text(encoding='utf-8') for f in (A / cdir).glob('*/*_codex_codeximg*.md'))
+    cb = ''.join(f.read_text(encoding='utf-8') for f in (A / cdir).glob('*/*/*_codex_codeximg*.md'))
     check('Codex: the image message is kept (its <image> wrapper dropped) and the image saved', 'codex 贴图的问题' in cb
           and '<image name' not in cb and len(list((droot / 'SelfTestDrive').rglob('*.png'))) == 2, cb[-200:].replace('\n', ' '))
     (tmp / 'drive-shortcut').symlink_to(droot / 'SelfTestDrive', target_is_directory=True)   # like <repo>/CSCA Drive
@@ -358,11 +358,11 @@ def run(cfg, keep=False):
                       {'type': 'input_image', 'image_url': 'data:image/png;base64,' + other, 'detail': 'high'},
                       {'type': 'input_text', 'text': '</image>'}]}}])
     ts(A, 'hook', 'codex', 'stop', stdin=json.dumps({'session_id': 'codexfile1', 'transcript_path': str(cfile)}), env=dict(denv, TEAM_SYNC_FOREGROUND='1'))
-    cb = ''.join(f.read_text(encoding='utf-8') for f in (A / cdir).glob('*/*_codex_codexfil*.md'))
+    cb = ''.join(f.read_text(encoding='utf-8') for f in (A / cdir).glob('*/*/*_codex_codexfil*.md'))
     check('Codex app attachments (no @): files placed like @-mentions (a drive file through a shortcut too), the image once, the preamble dropped', '按这两个文件改' in cb
           and '报名表.pdf' in cb and '/Users/y/' not in cb and '@docs/x.md' in cb and '@Drive:SelfTestDrive/真题/卷.pdf' in cb and cb.count('Drive:SelfTestDrive/') == 2
           and 'Files mentioned' not in cb and 'Distinguish' not in cb, cb[-300:].replace('\n', ' '))
-    cf = next(iter((A / cdir).glob('*/*_codex_codexfil*.md')))          # the same message as a pre-0.1.31 record showed it
+    cf = next(iter((A / cdir).glob('*/*/*_codex_codexfil*.md')))          # the same message as a pre-0.1.31 record showed it
     cnew = cf.read_text(encoding='utf-8')
     cold = preamble + '\n<image name=[Image #1] path="/Users/y/Desktop/截屏 1.png">\n[image]\n</image>'
     cf.write_text(re.sub(r'(<!-- msg \S+ user -->\n\*\*[^\n]*\*\*\n\n)(.*?)(\s*)$', lambda m: m.group(1) + cold + m.group(3), cnew, flags=re.S), encoding='utf-8')
@@ -375,7 +375,7 @@ def run(cfg, keep=False):
                ca('2026-01-09T00:00:05.000Z', tx('收到。'))])
     ts(A, 'hook', 'claude', 'stop', stdin=json.dumps({'session_id': 'oldimg1', 'transcript_path': str(to)}))
     (A / CONFIG_NAME).write_text(conf0, encoding='utf-8')
-    ro_ = next(iter((A / cdir).glob('*/*_claude_oldimg1*.md')), None)
+    ro_ = next(iter((A / cdir).glob('*/*/*_claude_oldimg1*.md')), None)
     before = ro_.read_text(encoding='utf-8') if ro_ else ''
     out = ts(A, 'convo', 'backfill', env=denv)
     after = ro_.read_text(encoding='utf-8') if ro_ else ''
@@ -413,7 +413,7 @@ def run(cfg, keep=False):
     tstdin = json.dumps({'session_id': 'titled1', 'transcript_path': str(tt)})
     jsonl(tt, [cu('2026-01-10T01:00:00.000Z', '这是一句很长的开场白' * 20 + '。后面还有'), ca('2026-01-10T01:00:05.000Z', tx('好的。'))])
     ts(A, 'hook', 'claude', 'stop', stdin=tstdin)
-    rf = next(iter((A / cdir).glob('*/*_claude_titled1*.md')), None)
+    rf = next(iter((A / cdir).glob('*/*/*_claude_titled1*.md')), None)
     rt = rf.read_text(encoding='utf-8') if rf else ''
     fm = fmt(rt)
     check('the record starts with front matter (who, agent, times, time zone, session); no intro paragraph or JSON comment',
@@ -435,7 +435,7 @@ def run(cfg, keep=False):
     jsonl(ctr, [{'timestamp': '2026-01-10T02:00:00.000Z', 'type': 'session_meta', 'payload': {'id': 'codextitle1'}},
                 {'timestamp': '2026-01-10T02:00:01.000Z', 'type': 'response_item', 'payload': {'type': 'message', 'role': 'user', 'content': [{'type': 'input_text', 'text': 'codex 的第一句'}]}}])
     ts(A, 'hook', 'codex', 'stop', stdin=json.dumps({'session_id': 'codextitle1', 'transcript_path': str(ctr)}), env=dict(TEAM_SYNC_FOREGROUND='1', CODEX_HOME=str(chome)))
-    ct = ''.join(f.read_text(encoding='utf-8') for f in (A / cdir).glob('*/*_codex_codextit*.md'))
+    ct = ''.join(f.read_text(encoding='utf-8') for f in (A / cdir).glob('*/*/*_codex_codextit*.md'))
     check("Codex: the thread name from the app's session index", ttl(ct) == 'Codex 起的名字' and 'agent: Codex' in fmt(ct), ct[:200].replace('\n', ' | '))
     rel = rf.relative_to(A).as_posix()
     out = ts(A, 'convo', 'compact', '--file', rel, '--through', '2026-01-10T01:00:05.000Z',
@@ -451,22 +451,33 @@ def run(cfg, keep=False):
         {'session': sid, 'agent': 'claude', 'who': who, 'title': '旧格式', 'start': '2026-01-11T00:00:00.000Z', 'last': '2026-01-11T00:00:05.000Z',
          'through': '', 'notes': {'img:0123456789abcdef.png': '旧说明'}}, ensure_ascii=False) + ' -->\n\n> team-sync 在每轮对话结束时自动写入。\n> 第一句: 旧格式\n\n'
         '## 摘要\n<!-- summaries:start -->\n(还没有)\n<!-- summaries:end -->\n\n## 原文\n\n<!-- msg 2026-01-11T00:00:00.000Z user -->\n**01-11 11:00 · ' + who + '**\n\n旧格式\n')
-    mine, theirs = A / cdir / '2026-01' / '2026-01-11_alice_claude_oldfmt1.md', A / cdir / '2026-01' / '2026-01-11_bob_claude_oldfmt2.md'
+    olddir = A / cdir / '2026-02'; olddir.mkdir(parents=True, exist_ok=True)       # the layout before 0.1.35: <YYYY-MM>/
+    mine, theirs = olddir / '2026-02-11_alice_claude_oldfmt1.md', olddir / '2026-02-11_bob_claude_oldfmt2.md'
     mine.write_text(oldrec('alice', 'oldfmt1'), encoding='utf-8'); theirs.write_text(oldrec('bob', 'oldfmt2'), encoding='utf-8')
+    nxt_old = olddir / '2026-02-12_alice_claude_oldfmt3.md'      # a session that ran on: its next month linked by the old path
+    nxt_old.write_text(oldrec('alice', 'oldfmt3').replace('"through": ""', f'"through": "", "next": "{cdir}/2026-02/2026-02-11_alice_claude_oldfmt1.md"'), encoding='utf-8')
+    stc = A / '.git' / 'team-sync' / 'convo' / 'claude_oldfmt1.json'
+    stc.parent.mkdir(parents=True, exist_ok=True); stc.write_text(json.dumps({'file': '2026-02/2026-02-11_alice_claude_oldfmt1.md'}), encoding='utf-8')
     out = ts(A, 'start')
-    mt = mine.read_text(encoding='utf-8')
-    check("start: this person's old-header records get front matter (notes and session kept); a teammate's stay as they are",
-          mt.startswith('---\n') and '"img:0123456789abcdef.png": "旧说明"' in mt and 'session: oldfmt1' in mt and '第一句' not in mt
-          and '旧格式' in mt.split('## 原文')[1] and theirs.read_text(encoding='utf-8') == oldrec('bob', 'oldfmt2'), mt[:200].replace('\n', ' | '))
-    check('session start lists records in both header formats', '_bob_claude_oldfmt2' in out and '_alice_claude_oldfmt1' in out
-          and 'Codex 起的名字' in out, out[-400:].replace('\n', ' | '))
+    moved = A / cdir / 'alice' / '2026-02' / mine.name
+    mt = moved.read_text(encoding='utf-8') if moved.exists() else ''
+    check("start: this person's old records move into their own folder and get front matter (notes and session kept)",
+          not mine.exists() and mt.startswith('---\n') and '"img:0123456789abcdef.png": "旧说明"' in mt and 'session: oldfmt1' in mt
+          and '第一句' not in mt and '旧格式' in mt.split('## 原文')[1], mt[:200].replace('\n', ' | '))
+    check("a teammate's old records stay where and as they are", theirs.read_text(encoding='utf-8') == oldrec('bob', 'oldfmt2'))
+    n3 = (A / cdir / 'alice' / '2026-02' / nxt_old.name)
+    check('links and this machine\'s state follow the move', n3.exists() and f'next_month: {cdir}/alice/2026-02/{mine.name}' in n3.read_text(encoding='utf-8')
+          and json.loads(stc.read_text(encoding='utf-8'))['file'] == f'alice/2026-02/{mine.name}', n3.read_text(encoding='utf-8')[:300].replace('\n', ' | ') if n3.exists() else '')
+    mine = moved
+    check('session start lists records in both layouts and header formats', '2026-02/2026-02-11_bob_claude_oldfmt2' in out
+          and 'alice/2026-02/2026-02-11_alice_claude_oldfmt1' in out, out[-500:].replace('\n', ' | '))
     rd = A / cdir / 'README.md'
     rdt = rd.read_text(encoding='utf-8') if rd.exists() else ''
     check('the records folder has a README explaining every front-matter field', 'attachment_notes' in rdt and 'summarized_through' in rdt and 'topics' in rdt and 'convo-readme' in rdt)
     rd.write_text(rdt.replace(re.search(r'convo-readme [\d.]+', rdt).group(0), 'convo-readme 99.0.0') if rdt else '', encoding='utf-8')
     ts(A, 'start')
     check("a newer version's README is not replaced by an older one", 'convo-readme 99.0.0' in rd.read_text(encoding='utf-8'))
-    rd.unlink(); mine.unlink(); theirs.unlink()
+    rd.unlink(); mine.unlink(); theirs.unlink(); n3.unlink()
 
     print('8 journal: concurrent lines merge; auto line only at session end')
     C = tmp / 'carol'

@@ -332,7 +332,18 @@ def _name(cfg, agent, sid, first_iso):
     if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', day):
         day = dt.date.today().isoformat()
     who = re.sub(r'[^\w-]', '', cfg.who()) or 'unknown'
-    return f"{day[:7]}/{day}_{who}_{agent}_{re.sub(r'[^A-Za-z0-9]', '', sid)[:8]}.md"
+    return f"{who}/{day[:7]}/{day}_{who}_{agent}_{re.sub(r'[^A-Za-z0-9]', '', sid)[:8]}.md"   # one folder per person (0.1.35+)
+
+
+def _month(rel):
+    """'mai/2026-10/x.md' (0.1.35+) or '2026-10/x.md' (before) → '2026-10'."""
+    m = re.search(r'(?:^|/)(\d{4}-\d{2})/', rel or '')
+    return m.group(1) if m else ''
+
+
+def _records(root):
+    """Every record under the folder, in either layout: <who>/<YYYY-MM>/*.md or (before 0.1.35) <YYYY-MM>/*.md."""
+    return [p for p in list(root.glob('*/*.md')) + list(root.glob('*/*/*.md')) if p.name != 'README.md']
 
 
 # The record's header (0.1.34+): YAML front matter. Simple values are written plain, anything else as JSON (a subset of
@@ -935,9 +946,9 @@ def update(cfg, agent, data, idx=None):
     limit, keep = int(c.get('compact_chars') or 30000), int(c.get('keep_recent_chars') or 8000)
     # One file per session per month: when a session runs into a new month, this month's file is closed (with a link
     # forward) and the session goes on in a file under the new month's folder (with a link back).
-    if st.get('prev_file') and msgs and _local(msgs[0][0], '%Y-%m-%d')[:7] < st['file'][:7]:   # re-read from the start (index rebuild)
-        st['msgs'] = msgs = [m for m in msgs if _local(m[0], '%Y-%m-%d')[:7] >= st['file'][:7]] or msgs[-1:]
-    cut = next((i for i, m in enumerate(msgs) if _local(m[0], '%Y-%m-%d')[:7] > st['file'][:7]), None)
+    if st.get('prev_file') and msgs and _local(msgs[0][0], '%Y-%m-%d')[:7] < _month(st['file']):   # re-read from the start (index rebuild)
+        st['msgs'] = msgs = [m for m in msgs if _local(m[0], '%Y-%m-%d')[:7] >= _month(st['file'])] or msgs[-1:]
+    cut = next((i for i, m in enumerate(msgs) if _local(m[0], '%Y-%m-%d')[:7] > _month(st['file'])), None)
     if cut is not None:
         nxt = _name(cfg, agent, sid, msgs[cut][0])
         if cut > 0:
@@ -1108,7 +1119,7 @@ def backfill(cfg):
         return 1
     drive, place, root = cfg.drive(), _placer(cfg), cfg.repo / _dir(cfg)
     files = {}
-    for f in root.glob('*/*.md'):
+    for f in _records(root):
         try:
             sess = _head_of(f.read_text(encoding='utf-8')[:8000]).get('session')
         except OSError:
@@ -1171,7 +1182,10 @@ def recent(cfg, n=5):
     if not root or not root.is_dir():
         return ''
     rows = []
-    for mdir in sorted((p for p in root.iterdir() if p.is_dir()), reverse=True)[:2]:
+    months = [p for p in root.glob('*') if p.is_dir() and re.fullmatch(r'\d{4}-\d{2}', p.name)]
+    months += [p for p in root.glob('*/*') if p.is_dir() and re.fullmatch(r'\d{4}-\d{2}', p.name)]   # <who>/<YYYY-MM>
+    latest = sorted({p.name for p in months}, reverse=True)[:2]
+    for mdir in (p for p in months if p.name in latest):
         for p in mdir.glob('*.md'):
             try:
                 h = _head_of(p.read_text(encoding='utf-8')[:8000])
@@ -1195,7 +1209,7 @@ def reformat(cfg):
     if not root or not root.is_dir():
         return 0
     n = 0
-    for f in root.glob('*/*.md'):
+    for f in _records(root):
         try:
             s = f.read_text(encoding='utf-8')
         except OSError:
@@ -1215,6 +1229,57 @@ def reformat(cfg):
             _write(cfg, f, new)
             n += 1
     return n
+
+
+def relocate(cfg):
+    """Records this person wrote before 0.1.35 sit in <YYYY-MM>/; move them into <who>/<YYYY-MM>/ with the same file
+    name, and update what points at them: the links in their headers (continued_from, prev_month, next_month) and this
+    machine's convo state. Only this person's own records, for the same reason as reformat(). Returns how many moved."""
+    d = _dir(cfg)
+    root = cfg.repo / d if d else None
+    if not root or not root.is_dir():
+        return 0
+    who = re.sub(r'[^\w-]', '', cfg.who()) or 'unknown'
+    moves = {}
+    for f in root.glob('*/*.md'):
+        if not re.fullmatch(r'\d{4}-\d{2}', f.parent.name):
+            continue
+        try:
+            head = _head_of(f.read_text(encoding='utf-8')[:8000])
+        except OSError:
+            continue
+        old = f'{f.parent.name}/{f.name}'
+        if head.get('who') == cfg.who() and not (root / who / old).exists():
+            moves[old] = f'{who}/{old}'
+    if not moves:
+        return 0
+    for old, new in moves.items():
+        (root / new).parent.mkdir(parents=True, exist_ok=True)
+        os.replace(root / old, root / new)
+    pre = f'{d}/'
+    for new in moves.values():
+        path = root / new
+        text = path.read_text(encoding='utf-8')
+        head, changed = _head_of(text), False
+        for k in ('parent', 'prev', 'next'):
+            v = head.get(k) or ''
+            if v.startswith(pre) and v[len(pre):] in moves:
+                head[k], changed = pre + moves[v[len(pre):]], True
+        if changed:
+            _write(cfg, path, _rehead(cfg, text, head) or text)
+    for cp in _caches(cfg):
+        st, changed = _load(cp), False
+        for k in ('file', 'prev_file'):
+            if st.get(k) in moves:
+                st[k], changed = moves[st[k]], True
+        if changed:
+            _save(cp, st)
+    for month in {old.split('/')[0] for old in moves}:
+        try:
+            (root / month).rmdir()                                # only when nobody else's records are left in it
+        except OSError:
+            pass
+    return len(moves)
 
 
 def readme(cfg):

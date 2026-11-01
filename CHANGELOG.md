@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.35 (2026-11-01)
+
+- One folder per person. Records go to `<dir>/<who>/YYYY-MM/` instead of `<dir>/YYYY-MM/`, so a month's folder no longer mixes everyone's sessions. File names stay as they were.
+- At session start each machine moves its own records from the old layout (only its own: a teammate's machine may still run a version that writes the old path), and updates the links between them (`continued_from`, `prev_month`, `next_month`) and its own convo state. An emptied month folder is removed; one that still holds a teammate's records stays until their machine moves them.
+- Everything that looks for records (the session-start list, `convo backfill`, header conversion) finds them in either layout. The records README describes the new folders.
+
 ## 0.1.34 (2026-10-31)
 
 - Records start with YAML front matter instead of a title line, a hidden JSON comment and a paragraph explaining the format in every file. Fields a person reads: `title`, `topics`, `who`, `agent`, `started`, `updated`, `timezone`, `continued_from`, `prev_month`, `next_month`; fields for the tool: `session`, `earlier_sessions`, `summarized_through`, `hidden_through`, `attachment_notes`. Simple values are plain, others JSON, so any YAML reader loads it.
