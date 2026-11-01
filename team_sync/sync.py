@@ -403,7 +403,7 @@ def _start_body(cfg, pull_ok=True):
     try:
         from .convo import recent, reformat, readme, relocate
         readme(cfg)                                               # the records folder's README, kept to this version's format
-        relocate(cfg)                                             # this person's records still under <YYYY-MM>/: into <who>/<YYYY-MM>/
+        relocate(cfg)                                             # this person's records still directly in <YYYY-MM>/: into <YYYY-MM>/<who>/
         reformat(cfg)                                             # this person's records still in the old header format
         rc = recent(cfg)
         if rc:

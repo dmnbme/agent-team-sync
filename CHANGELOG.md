@@ -2,8 +2,8 @@
 
 ## 0.1.35 (2026-11-01)
 
-- One folder per person. Records go to `<dir>/<who>/YYYY-MM/` instead of `<dir>/YYYY-MM/`, so a month's folder no longer mixes everyone's sessions. File names stay as they were.
-- At session start each machine moves its own records from the old layout (only its own: a teammate's machine may still run a version that writes the old path), and updates the links between them (`continued_from`, `prev_month`, `next_month`) and its own convo state. An emptied month folder is removed; one that still holds a teammate's records stays until their machine moves them.
+- A folder per person inside each month. Records go to `<dir>/YYYY-MM/<who>/` instead of directly into `<dir>/YYYY-MM/`, so a month's folder no longer mixes everyone's sessions; the month stays the first level. File names stay as they were.
+- At session start each machine moves its own records into its folder (only its own: a teammate's machine may still run a version that writes the old path), and updates the links between them (`continued_from`, `prev_month`, `next_month`) and its own convo state.
 - Everything that looks for records (the session-start list, `convo backfill`, header conversion) finds them in either layout. The records README describes the new folders.
 
 ## 0.1.34 (2026-10-31)

@@ -222,7 +222,7 @@ def run(cfg, keep=False):
     ts(A, 'hook', 'claude', 'stop', stdin=mstdin)
     jsonl(trm, [cu('2026-02-15T03:00:00.000Z', '二月接着问'), ca('2026-02-15T03:00:05.000Z', tx('二月的回答'))])
     ts(A, 'hook', 'claude', 'stop', stdin=mstdin)
-    jan = next(iter((A / cdir).glob('alice/2026-01/*_monthrol.md')), None); feb = next(iter((A / cdir).glob('alice/2026-02/*_monthrol.md')), None)
+    jan = next(iter((A / cdir).glob('2026-01/alice/*_monthrol.md')), None); feb = next(iter((A / cdir).glob('2026-02/alice/*_monthrol.md')), None)
     jt = jan.read_text(encoding='utf-8') if jan else ''; ft = feb.read_text(encoding='utf-8') if feb else ''
     check('a session that runs into a new month goes on in a new file, linked both ways',
           '一月的回答' in jt and '二月' not in jt.split('## ')[-1] and '二月的回答' in ft and '一月的回答' not in ft
@@ -459,18 +459,18 @@ def run(cfg, keep=False):
     stc = A / '.git' / 'team-sync' / 'convo' / 'claude_oldfmt1.json'
     stc.parent.mkdir(parents=True, exist_ok=True); stc.write_text(json.dumps({'file': '2026-02/2026-02-11_alice_claude_oldfmt1.md'}), encoding='utf-8')
     out = ts(A, 'start')
-    moved = A / cdir / 'alice' / '2026-02' / mine.name
+    moved = A / cdir / '2026-02' / 'alice' / mine.name
     mt = moved.read_text(encoding='utf-8') if moved.exists() else ''
     check("start: this person's old records move into their own folder and get front matter (notes and session kept)",
           not mine.exists() and mt.startswith('---\n') and '"img:0123456789abcdef.png": "旧说明"' in mt and 'session: oldfmt1' in mt
           and '第一句' not in mt and '旧格式' in mt.split('## 原文')[1], mt[:200].replace('\n', ' | '))
     check("a teammate's old records stay where and as they are", theirs.read_text(encoding='utf-8') == oldrec('bob', 'oldfmt2'))
-    n3 = (A / cdir / 'alice' / '2026-02' / nxt_old.name)
-    check('links and this machine\'s state follow the move', n3.exists() and f'next_month: {cdir}/alice/2026-02/{mine.name}' in n3.read_text(encoding='utf-8')
-          and json.loads(stc.read_text(encoding='utf-8'))['file'] == f'alice/2026-02/{mine.name}', n3.read_text(encoding='utf-8')[:300].replace('\n', ' | ') if n3.exists() else '')
+    n3 = (A / cdir / '2026-02' / 'alice' / nxt_old.name)
+    check('links and this machine\'s state follow the move', n3.exists() and f'next_month: {cdir}/2026-02/alice/{mine.name}' in n3.read_text(encoding='utf-8')
+          and json.loads(stc.read_text(encoding='utf-8'))['file'] == f'2026-02/alice/{mine.name}', n3.read_text(encoding='utf-8')[:300].replace('\n', ' | ') if n3.exists() else '')
     mine = moved
-    check('session start lists records in both layouts and header formats', '2026-02/2026-02-11_bob_claude_oldfmt2' in out
-          and 'alice/2026-02/2026-02-11_alice_claude_oldfmt1' in out, out[-500:].replace('\n', ' | '))
+    check('session start lists records in both layouts and header formats', '2026-02/2026-02-11_bob_claude_oldfmt2.md' in out
+          and '2026-02/alice/2026-02-11_alice_claude_oldfmt1' in out, out[-500:].replace('\n', ' | '))
     rd = A / cdir / 'README.md'
     rdt = rd.read_text(encoding='utf-8') if rd.exists() else ''
     check('the records folder has a README explaining every front-matter field', 'attachment_notes' in rdt and 'summarized_through' in rdt and 'topics' in rdt and 'convo-readme' in rdt)
