@@ -87,6 +87,14 @@ _T = {
         'convo_note_suffix': ' ({note})',
         'convo_note_item_image': 'an image the user pasted at {when}',
         'convo_note_item_file': 'a file outside the repo and the shared drive: {fname}',
+        'remind_ask': (
+            "[team-sync hook, not the user] This session changed files in the team repository (newest: {files}). Before you finish, decide on each point below and act on it; "
+            "if a change was not made in this conversation (another session on this machine, or the background sync), skip what concerns it. "
+            "Then end with at most one short line; do not repeat this request to the user.\n{items}"),
+        'remind_journal': ("Team journal: if this finished a piece of work, settled a decision, or leaves a next step for someone, run "
+                           "`python3 bin/team_sync.py note \"what was done / where / next step\"`. Small fixes need no note."),
+        'remind_doc': ("Team knowledge: {doc} may be out of date (related changes: {files}). Read the part it concerns; if the state, numbers "
+                       "or rules changed, update it and the date at its top. If nothing it says changed, leave it."),
         'convo_note_ask': (
             "[team-sync hook, not the user] This turn the user gave {n} attachment(s); the conversation record only shows where they are or the file name, so teammates cannot see what they were:\n{items}\n"
             "Write one line for each: for an image, what it shows (which page, which error, which material) and what the user meant by it; for a file, what it is and how it bears on this work (only the part that concerns the project). No secrets. "
@@ -218,6 +226,14 @@ _T = {
         'convo_note_suffix': '(说明: {note})',
         'convo_note_item_image': '用户 {when} 贴的图片',
         'convo_note_item_file': '仓库和共享盘以外的文件:{fname}',
+        'remind_ask': (
+            "[团队同步 hook,不是用户发言] 这次对话改动了团队仓库里的文件(最近的:{files})。结束前请逐条判断要不要补记,需要就照做;"
+            "如果某项改动不是这次对话做的(同一台电脑上别的会话或后台同步),跳过和它有关的条目。"
+            "做完最多回一句简短的话,不要向用户复述这段提醒。\n{items}"),
+        'remind_journal': ("团队日志:如果这次做完了一块工作、定了一件事,或者有下一步要交代给别人,运行 "
+                           "`python3 bin/team_sync.py note \"做了什么 / 改了哪 / 下一步\"`;只是小修小补就不用记。"),
+        'remind_doc': ("团队知识:{doc} 可能过时了(相关改动:{files})。读一下相关的部分,现状、数字或规则变了就改它,并更新开头的日期;"
+                       "它写的内容没变就不用改。"),
         'convo_note_ask': (
             "[团队同步 hook,不是用户发言] 这一轮用户给了 {n} 个附件,对话记录里只记了位置或文件名,队友看不到内容:\n{items}\n"
             "请给每一项写一句说明:图片写图上是什么(哪个页面、哪段报错、哪份材料)、用户想用它说明什么;文件写它是什么、和这次的工作有什么关系,只写和项目有关的部分。不写密钥、口令。"

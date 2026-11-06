@@ -76,7 +76,7 @@ Enforced by the system, whether or not the model complies:
 Written in the rules, so the model has to follow them:
 
 - **Running `start` first, in agents without hooks.** The model may skip it or run it late. Until it runs, the agent does not know what teammates changed recently and may keep editing old files; the background sync pulls new content within 5 minutes, and edits made in that window can conflict with someone else's. Agents without hooks have no conversation records either.
-- **For every agent**: adding a journal line after a piece of work, reading the relevant knowledge file before starting, upgrading when the summary reports a version mismatch, summarising an overlong conversation record, relaying a message to the user instead of acting on it. These are requests; the model may not follow them.
+- **For every agent**: adding a journal line after a piece of work (with turn-end reminders on, Claude Code and Codex are reminded once at the end of a turn, but writing it is still up to the model), reading the relevant knowledge file before starting, upgrading when the summary reports a version mismatch, summarising an overlong conversation record, relaying a message to the user instead of acting on it. These are requests; the model may not follow them.
 
 A rule that must hold every time belongs in a script, a git hook or an agent hook, and not only in the rules file.
 
@@ -214,6 +214,28 @@ team-sync msg list                       messages you sent and received, deliver
 - Desktop notice: when a sync pulls in a message that has not been delivered yet, the recipient's computer shows a system notification (who wrote, and how it starts) telling them to open their agent. It appears even with no agent open, since the background sync does not need one; once per message, and it does not count as delivery. Clicking it opens the app that last ran a team-sync hook on that computer (Claude, Codex, a terminal or an editor). On macOS a small applet generated on first use posts the notifications (`~/.team-sync/notify/team-sync.app`, nothing to install); macOS asks once to allow its notifications, and again after the icon changes. The icon is `notify.icon` in the config, a square PNG or icns in the repository; without it the system sync icon is used. On Windows it is a native toast showing team-sync and the icon, registered in the current user's registry (no admin); clicking it, on the popup or in the Action Center, opens the agent and clears that one toast.
 - Proxy: git ignores the system proxy (the "system proxy" switch in Clash and the like) and reads only `http.proxy` and the `*_PROXY` variables, and hooks started by an app and the background sync do not get variables set in a shell. So when no proxy variable is set, team-sync hands the system proxy to git and gh; a git `http.proxy` you configured still wins. PAC scripts are not read.
 - **Messages are relayed, never executed.** The injected text says it comes from a teammate, not from the user, and that the agent must tell the user first and act only once they agree. Otherwise anyone who can push to the repository could steer a teammate's agent, and the person would not know why it acted. This depends on the model following it; see the section above.
+
+## Turn-end reminders
+
+Turn them on with a `"remind"` entry in `team-sync.json` (from 0.1.36; Claude Code and Codex only):
+
+```json
+"remind": {
+  "docs": [
+    {"paths": ["data/", "docs/site-changes.md"], "doc": "docs/knowledge/pipeline.md"},
+    {"paths": ["collect/"], "doc": "docs/knowledge/collect.md"}
+  ],
+  "ignore": ["tmp/"],
+  "journal": true, "again_min": 60, "max_asks": 4
+}
+```
+
+- At the end of each turn the hook looks at what this session changed in the team repository: this machine's sync commits since the session's first message, plus what is not committed yet. Nothing changed, nothing happens.
+- Files changed and no hand-written journal line yet in this session: it asks the agent to decide whether a `note` is due (a finished piece of work, a decision, a next step for someone); small fixes need none.
+- A changed file under one of a rule's `paths` (prefix or glob) while that rule's `doc` was not changed in this session: it asks the agent to read that knowledge file and update it if what it says is no longer true.
+- The agent decides; the hook only notices. One request per batch of changes, none in the turn that answers one, at least `again_min` minutes apart, at most `max_asks` per session. `journal: false` turns off just the journal question. Paths under `ignore` never count; conversation records, messages and the journal never do.
+- Files changed by another session on the same machine can be counted too, so the request tells the agent to skip what it did not do.
+- These are requests the model may not follow; agents without hooks (Antigravity, WorkBuddy) get none.
 
 ## Other commands
 

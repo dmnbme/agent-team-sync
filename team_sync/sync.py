@@ -544,6 +544,28 @@ def _convo(cfg, agent, data):
         return None
 
 
+def _remind_mark(cfg, data):
+    try:
+        from .remind import mark
+        mark(cfg, data)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _remind(cfg, data):
+    """Journal / knowledge-doc reminder for the agent at turn end, or None. Never raises."""
+    try:
+        from .remind import ask
+        return ask(cfg, data)
+    except Exception as e:  # noqa: BLE001
+        try:
+            with open(state(cfg, 'remind.log'), 'a', encoding='utf-8') as f:
+                f.write(f'{dt.datetime.now():%Y-%m-%d %H:%M}: {e!r}\n')
+        except Exception:
+            pass
+        return None
+
+
 def _stop_in_background(cfg):
     """Run `stop` detached so the hook returns at once (the hook itself has to stay synchronous to answer)."""
     if os.environ.get('TEAM_SYNC_FOREGROUND'):                   # selftest
@@ -610,6 +632,7 @@ def hook(cfg, kind, event):
             # Also: when the conversation record is paused (or this prompt pauses or resumes it), say so to the user every turn.
             from .inbox import deliver
             from .convo import turn_notice
+            _remind_mark(cfg, data)
             note, nctx = turn_notice(cfg, kind, data)
             ctx = '\n\n'.join(x for x in (deliver(cfg), nctx) if x)
             if ctx:
@@ -620,7 +643,7 @@ def hook(cfg, kind, event):
             # Stop fires when a turn ends. Write the conversation record, then push in a detached process so the user is
             # never held up. A compaction request continues the turn; the push then happens when that turn ends.
             # (SessionEnd is capped at 3 s by Codex, too short for pull + push; the background autosync covers the rest.)
-            ask = _convo(cfg, 'codex', data)
+            ask = _convo(cfg, 'codex', data) or _remind(cfg, data)
             if ask:
                 out = {'decision': 'block', 'reason': ask}
             else:
@@ -628,7 +651,7 @@ def hook(cfg, kind, event):
         elif kind == 'claude' and event == 'stop':
             # Same as Codex: write the record, then commit + pull + push in a detached process so teammates see this turn at
             # once. SessionEnd still runs `stop --session-end` for the one journal line per session.
-            ask = _convo(cfg, 'claude', data)
+            ask = _convo(cfg, 'claude', data) or _remind(cfg, data)
             if ask:
                 out = {'decision': 'block', 'reason': ask}
             else:

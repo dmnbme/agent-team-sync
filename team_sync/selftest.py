@@ -53,6 +53,7 @@ def run(cfg, keep=False):
         if (cfg.repo / CONFIG_NAME).exists():                      # use the working-tree config even if not committed yet,
             c0 = json.loads((cfg.repo / CONFIG_NAME).read_text(encoding='utf-8'))      # never the real shared drive
             c0['drive'] = {'root_name': 'SelfTestDrive', 'marker': 'selftest-marker', 'patterns': []}
+            c0.pop('remind', None)                              # turn-end reminders are tested on their own (step 14)
             (tmp / who / CONFIG_NAME).write_text(json.dumps(c0, ensure_ascii=False, indent=2), encoding='utf-8')
         (tmp / who / cfg.data['env_file']).write_text('\n'.join([f"{cfg.key('WHO')}={who}"] + env_lines) + '\n', encoding='utf-8')
     A, B = tmp / 'alice', tmp / 'bob'
@@ -592,6 +593,37 @@ def run(cfg, keep=False):
         sync_mod.notify = saved[0]
         if saved[1] is None:
             os.environ.pop('TEAM_SYNC_NO_NOTIFY', None)
+
+    print('14 turn-end reminders: journal note and knowledge doc, asked once per batch of changes')
+    conf = json.loads((C / CONFIG_NAME).read_text(encoding='utf-8'))
+    conf['remind'] = {'docs': [{'paths': [(jdir / 'remind14').as_posix() + '/'], 'doc': 'docs14/know.md'}], 'ignore': [CONFIG_NAME], 'again_min': 0, 'max_asks': 3}
+    (C / CONFIG_NAME).write_text(json.dumps(conf, ensure_ascii=False, indent=2), encoding='utf-8')
+    fg = {'TEAM_SYNC_FOREGROUND': '1'}
+    rs = lambda sid, **kw: json.dumps(dict({'session_id': sid, 'hook_event_name': 'Stop'}, **kw))
+    rstop = lambda sid, **kw: ts(C, 'hook', 'claude', 'stop', stdin=rs(sid, **kw), env=fg)
+    ts(C, 'hook', 'claude', 'prompt', stdin=json.dumps({'session_id': 'remind14', 'prompt': 'hi'}))
+    check('nothing changed: no request', rstop('remind14').strip() == '{}')
+    D14 = C / jdir / 'remind14'; D14.mkdir(parents=True, exist_ok=True); (D14 / 'a.txt').write_text('a\n', encoding='utf-8')
+    out = rstop('remind14')
+    try:
+        d = json.loads(out); reason = d.get('reason', '')
+    except Exception:  # noqa: BLE001
+        d, reason = {}, ''
+    check('changed a mapped path: asks about the journal and the doc', d.get('decision') == 'block' and 'team_sync.py note' in reason
+          and 'docs14/know.md' in reason and 'remind14/a.txt' in reason, out[:120])
+    check('the turn that answers is not asked again', rstop('remind14', stop_hook_active=True).strip() == '{}')
+    check('no new changes: no request', rstop('remind14').strip() == '{}')
+    ts(C, 'note', 'selftest: carol notes the data14 work')
+    (D14 / 'b.txt').write_text('b\n', encoding='utf-8')
+    check('noted and the doc already asked: no request for more of the same', rstop('remind14').strip() == '{}')
+    ts(C, 'hook', 'claude', 'prompt', stdin=json.dumps({'session_id': 'remind14b', 'prompt': 'hi'}))
+    (D14 / 'c.txt').write_text('c\n', encoding='utf-8')
+    out = rstop('remind14b')
+    check('a new session asks again', '"block"' in out and 'docs14/know.md' in out, out[:80])
+    conf.pop('remind'); (C / CONFIG_NAME).write_text(json.dumps(conf, ensure_ascii=False, indent=2), encoding='utf-8')
+    ts(C, 'hook', 'claude', 'prompt', stdin=json.dumps({'session_id': 'remind14c', 'prompt': 'hi'}))
+    (D14 / 'd.txt').write_text('d\n', encoding='utf-8')
+    check('without "remind" in the config: never asks', rstop('remind14c').strip() == '{}')
 
     check("the real ~/.team-sync/notify click target is left alone", all((f.read_bytes() if f.exists() else None) == b for f, b in real))
 

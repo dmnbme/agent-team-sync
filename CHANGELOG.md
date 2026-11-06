@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.36 (2026-11-06)
+
+- Turn-end reminders (`"remind"` in `team-sync.json`, Claude Code and Codex). When a session changed files in the team repository, the Stop hook asks the agent once to decide whether the work deserves a journal note, and, for each knowledge file mapped to the changed paths (`remind.docs`), whether that file needs updating. The agent decides; the hook only notices.
+- Asked at most once per batch of new changes, never in the turn that answers, at least `again_min` minutes apart, at most `max_asks` per session; a hand-written journal line since the last request means no journal question. Off unless configured.
+- Selftest step 14 covers it.
+
 ## 0.1.35 (2026-11-01)
 
 - A folder per person inside each month. Records go to `<dir>/YYYY-MM/<who>/` instead of directly into `<dir>/YYYY-MM/`, so a month's folder no longer mixes everyone's sessions; the month stays the first level. File names stay as they were.
