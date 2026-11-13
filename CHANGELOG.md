@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.39 (2026-11-14)
+
+- Fix: a time written before 0.1.37 (a message's sent or read time, with no offset) was shown in the reader's local time and labelled with the reader's zone, though nothing says which zone it was written in; a teammate's 08:57 read as 08:57 in your zone. Such times are now shown as written, with no zone.
+
 ## 0.1.38 (2026-11-14)
 
 - Attachment notes no longer read as Markdown links. In Chinese records a note followed its attachment as `[图片: …](说明: …)`, which a Markdown reader renders as a link; it is now `[图片: …]（说明：…）` with full-width brackets. (English records already had a space before the bracket, which no reader takes for a link.)

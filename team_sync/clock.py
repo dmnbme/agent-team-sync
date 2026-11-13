@@ -3,7 +3,7 @@
 Written times (commit messages, journal lines, message headers) carry the writer's local time and zone, e.g.
 '2026-11-14 10:17 UTC+11'. Stored times (message metadata, state files) are ISO 8601 with the offset. Shown times are
 converted to the reader's local time and labelled with the reader's zone. Values written by older versions have no
-offset; they are read as the reader's local time, which is all that can be known about them.
+offset: they are shown as written, with no zone, and compared as if they were the reader's local time.
 """
 import datetime as dt
 
@@ -43,6 +43,16 @@ def parse(s):
 
 
 def show(s, fmt='%m-%d %H:%M'):
-    """A stored ISO time in the reader's local time, with the zone: '11-14 10:17 UTC+11'."""
+    """A stored ISO time in the reader's local time, with the zone: '11-14 10:17 UTC+11'. A time written by a version
+    before 0.1.37 has no offset: the zone it was written in is unknown, so it is shown as written, with no zone."""
     d = parse(s)
-    return stamp(d.astimezone(), fmt) if d else (s or '')[5:16].replace('T', ' ')
+    if d is None:
+        return (s or '')[5:16].replace('T', ' ')
+    if not _has_offset(s):
+        return d.strftime(fmt)
+    return stamp(d.astimezone(), fmt)
+
+
+def _has_offset(s):
+    t = s.strip()
+    return t.endswith('Z') or (len(t) > 19 and t[-6] in '+-' and t[-3] == ':')
