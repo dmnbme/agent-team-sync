@@ -2,9 +2,12 @@
 
 ## 0.1.37 (2026-11-14)
 
-- Records name the model. A new front-matter field `models` lists every model the agent used in the session, in order of first use, as the agent's own log names it: Claude Code's model id from each reply, Codex's model from each turn's context with the reasoning effort in brackets (`gpt-5.6-terra (high)`). When the model changes mid-session, a line `> time · ⇄ …` marks the place in the verbatim text.
+- Records name the model. A new front-matter field `models` lists every model the agent used in the session, in order of first use, as the agent's own log names it: Claude Code's from each reply, Codex's from each turn's context, each with its reasoning effort in brackets (`claude-opus-5-5 (high)`, `gpt-5.6-terra (high)`). When the model changes mid-session, a line `> time · ⇄ …` marks the place in the verbatim text.
 - A session recorded before 0.1.37 looks once through the part of its transcript already recorded, so its list starts complete.
 - The records README explains the field. Selftest 7f covers it.
+- Times carry the time zone (teammates sit in different zones, and bare local times read wrong on the other side). Commit messages (`sync(who): 2026-11-14 10:17 UTC+11 · 3 files`), journal lines, message headers, the session-start header, conflict and failure notices and the tool's own logs write the writer's local time with its zone. Message metadata (sent, read) and the last-start stamp are stored as ISO 8601 with the offset, so comparing a teammate's time with yours no longer depends on both machines sharing a zone. Shown times (messages delivered, receipts, `msg list`, lease expiry) are converted to the reader's local time and labelled; the session-start list of records says which zone its times are in. The fingerprint's `generated_at` has the offset too.
+- Values written by older versions have no offset and are read as the reader's local time. The journal reminder reads lines with or without a zone.
+- New module `clock`. Selftest steps 2 and the messages step check the zones.
 
 ## 0.1.36 (2026-11-06)
 

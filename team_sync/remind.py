@@ -114,7 +114,7 @@ def _jlines(cfg):
 def _noted_after(cfg, n):
     """A journal line by this person, not an automatic one, among the lines after the first `n`."""
     who = cfg.who()
-    pat = re.compile(r'^- \d{4}-\d{2}-\d{2} \d{2}:\d{2} · ([^·]+?) · (.*)$')
+    pat = re.compile(r'^- \d{4}-\d{2}-\d{2} \d{2}:\d{2}(?: UTC[+-][\d:]+)? · ([^·]+?) · (.*)$')   # zone from 0.1.37
     for line in _jlines(cfg)[n:]:
         m = pat.match(line)
         if m and m.group(1).strip() == who and not m.group(2).startswith('auto · '):

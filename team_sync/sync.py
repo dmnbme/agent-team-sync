@@ -13,6 +13,8 @@ A pull conflict is never left half-merged: rebase is aborted, local work stays, 
 """
 import contextlib
 import datetime as dt
+
+from . import clock
 import io
 import json
 import os
@@ -107,7 +109,7 @@ def trouble(cfg, kind, ok, detail=''):
         if cur is not None:
             f.unlink()
             if cur.get('alerted'):
-                notify(cfg, t(cfg.lang, 'trouble_cleared', what=t(cfg.lang, f'trouble_{kind}_what'), since=cur['first']),
+                notify(cfg, t(cfg.lang, 'trouble_cleared', what=t(cfg.lang, f'trouble_{kind}_what'), since=f"{cur['first']} {clock.tz_label()}"),
                        title=t(cfg.lang, 'trouble_cleared_title'), level='Information')
         return
     if cur is None:
@@ -116,7 +118,7 @@ def trouble(cfg, kind, ok, detail=''):
     first = dt.datetime.strptime(cur['first'], '%Y-%m-%d %H:%M')
     after = float(cfg.data['sync'].get('alert_after_min', 60))
     if not cur['alerted'] and (now - first).total_seconds() >= after * 60:
-        notify(cfg, t(cfg.lang, f'trouble_{kind}', since=cur['first'], detail=' '.join(detail.split())[:120]),
+        notify(cfg, t(cfg.lang, f'trouble_{kind}', since=f"{cur['first']} {clock.tz_label()}", detail=' '.join(detail.split())[:120]),
                title=t(cfg.lang, 'trouble_title'))
         cur['alerted'] = True
     f.write_text(json.dumps(cur, ensure_ascii=False), encoding='utf-8')
@@ -158,7 +160,7 @@ def note(cfg, text, auto=False):
     if not j.exists():
         j.write_text(t(cfg.lang, 'journal_head'), encoding='utf-8')
     with open(j, 'a', encoding='utf-8') as f:
-        f.write(f"- {dt.datetime.now():%Y-%m-%d %H:%M} · {cfg.who()} · {'auto · ' if auto else ''}{text.strip()}\n")
+        f.write(f"- {clock.stamp()} · {cfg.who()} · {'auto · ' if auto else ''}{text.strip()}\n")
 
 
 # Signs of a flaky HTTP/2 path (some networks and proxies drop long HTTP/2 streams); HTTP/1.1 is the usual cure.
@@ -203,7 +205,7 @@ def pull(cfg, _retry=True):
         trouble(cfg, 'pull', True)
         if marker.exists():                                     # an earlier conflict cleared by itself: say so once, at the next start
             state(cfg, 'conflict_resolved.txt').write_text(
-                marker.read_text(encoding='utf-8').splitlines()[0] + '\n' + f'{dt.datetime.now():%Y-%m-%d %H:%M}\n', encoding='utf-8')
+                marker.read_text(encoding='utf-8').splitlines()[0] + '\n' + f'{clock.stamp()}\n', encoding='utf-8')
             marker.unlink()
         return t(cfg.lang, 'pulled')
     out = (r.stderr or r.stdout).strip()
@@ -224,7 +226,7 @@ def pull(cfg, _retry=True):
     gist = [l for l in raw if 'CONFLICT' in l or 'could not apply' in l or l.startswith('error:')][:3] or raw[:2]
     msg = t(cfg.lang, 'conflict') + '\n   ' + '\n   '.join(l[:160] for l in gist)
     again = marker.exists()
-    now = f'{dt.datetime.now():%Y-%m-%d %H:%M}'
+    now = clock.stamp()
     first = marker.read_text(encoding='utf-8').splitlines()[0] if again else now
     marker.write_text(f'{first}\n{msg}\n', encoding='utf-8')
     with open(state(cfg, 'conflicts.log'), 'a', encoding='utf-8') as fh:
@@ -330,7 +332,7 @@ def _start_body(cfg, pull_ok=True):
     ensure_hook(cfg)
     ensure_attrs(cfg)
     linked = ensure_shortcut(cfg)
-    lines = [t(cfg.lang, 'header', holder=cfg.holder(), now=f'{dt.datetime.now():%Y-%m-%d %H:%M}')]
+    lines = [t(cfg.lang, 'header', holder=cfg.holder(), now=clock.stamp())]
     ident = ensure_identity(cfg)
     if ident:
         lines.append(ident)
@@ -421,7 +423,7 @@ def _start_body(cfg, pull_ok=True):
             except OSError:
                 pass
     lines.append(t(cfg.lang, 'rules', rules=cfg.data['rules_file']))
-    stamp.write_text(dt.datetime.now().isoformat(timespec='seconds'), encoding='utf-8')
+    stamp.write_text(clock.iso(), encoding='utf-8')
     print('\n'.join(lines))
 
 
@@ -483,7 +485,7 @@ def _stop_body(cfg, session_end=False):
 
 def _commit_push(cfg, staged):
     if staged:
-        r = git(cfg, 'commit', '-q', '-m', f'sync({cfg.who()}): {dt.datetime.now():%Y-%m-%d %H:%M} · {len(staged)} files')
+        r = git(cfg, 'commit', '-q', '-m', f'sync({cfg.who()}): {clock.stamp()} · {len(staged)} files')
         if r.returncode != 0:
             print(t(cfg.lang, 'commit_blocked') + '\n' + (r.stdout + r.stderr).strip()[:800])
             git(cfg, 'reset', '-q')
@@ -538,7 +540,7 @@ def _convo(cfg, agent, data):
     except Exception as e:  # noqa: BLE001
         try:
             with open(state(cfg, 'convo.log'), 'a', encoding='utf-8') as f:
-                f.write(f'{dt.datetime.now():%Y-%m-%d %H:%M} {agent}: {e!r}\n')
+                f.write(f'{clock.stamp()} {agent}: {e!r}\n')
         except Exception:
             pass
         return None
@@ -560,7 +562,7 @@ def _remind(cfg, data):
     except Exception as e:  # noqa: BLE001
         try:
             with open(state(cfg, 'remind.log'), 'a', encoding='utf-8') as f:
-                f.write(f'{dt.datetime.now():%Y-%m-%d %H:%M}: {e!r}\n')
+                f.write(f'{clock.stamp()}: {e!r}\n')
         except Exception:
             pass
         return None

@@ -42,7 +42,7 @@ def build(cfg):
     sizes = _walk(root)
     files = {rel: {'bytes': size, 'sha256': _sha(root / rel)} for rel, size in sizes.items()}
     head = subprocess.run(['git', 'rev-parse', '--short', 'HEAD'], cwd=cfg.repo, capture_output=True, text=True).stdout.strip() or None
-    doc = {'root': label, 'generated_at': dt.datetime.now().isoformat(timespec='seconds'), 'by': cfg.who(), 'git_head': head,
+    doc = {'root': label, 'generated_at': dt.datetime.now().astimezone().isoformat(timespec='seconds'), 'by': cfg.who(), 'git_head': head,
            'file_count': len(files), 'total_bytes': sum(sizes.values()), 'files': files}
     manifest.write_text(json.dumps(doc, ensure_ascii=False, indent=1), encoding='utf-8')
     return doc

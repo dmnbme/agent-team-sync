@@ -70,6 +70,8 @@ def run(cfg, keep=False):
     out = ts(B, 'start')
     check('bob received the file', fb.exists())
     check('summary shows alice commit', 'sync(alice)' in out)
+    check('commit message and journal line carry the time zone', re.search(r'sync\(alice\): \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC[+-]', out) is not None
+          and re.search(r'^- \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC[+-][\d:]+ · alice · selftest: alice added', (A / cfg.data['journal']).read_text(encoding='utf-8'), re.M) is not None, out[:200].replace('\n', ' | '))
     check('summary shows alice journal line', 'selftest: alice added' in out)
 
     print('3 same-line conflict')
@@ -452,11 +454,11 @@ def run(cfg, keep=False):
     st7 = json.loads(stc7.read_text(encoding='utf-8')); st7.pop('models', None); st7.pop('model', None)
     stc7.write_text(json.dumps(st7, ensure_ascii=False), encoding='utf-8')
     jsonl(tt, [cu('2026-01-10T01:04:00.000Z', '第五句'),
-               {'type': 'assistant', 'timestamp': '2026-01-10T01:04:05.000Z', 'message': {'role': 'assistant', 'model': 'model-two', 'content': [tx('换了个模型回答。')]}}])
+               {'type': 'assistant', 'timestamp': '2026-01-10T01:04:05.000Z', 'effort': 'max', 'message': {'role': 'assistant', 'model': 'model-two', 'content': [tx('换了个模型回答。')]}}])
     ts(A, 'hook', 'claude', 'stop', stdin=tstdin)
     rt = rf.read_text(encoding='utf-8')
     check('models: the earlier model found once in the transcript, the new one added, the switch marked in the text',
-          'models: ["x", "model-two"]' in fmt(rt) and re.search(r'^> .*⇄.*model-two', rt, re.M) is not None, fmt(rt)[:300].replace('\n', ' | '))
+          'models: ["x", "model-two (max)"]' in fmt(rt) and re.search(r'^> .*⇄.*model-two \(max\)', rt, re.M) is not None, fmt(rt)[:300].replace('\n', ' | '))
     jsonl(ctr, [{'timestamp': '2026-01-10T02:00:02.000Z', 'type': 'turn_context', 'payload': {'model': 'gpt-test', 'effort': 'high'}},
                 {'timestamp': '2026-01-10T02:00:03.000Z', 'type': 'response_item', 'payload': {'type': 'message', 'role': 'assistant', 'content': [{'type': 'output_text', 'text': 'codex 回答'}]}}])
     ts(A, 'hook', 'codex', 'stop', stdin=json.dumps({'session_id': 'codextitle1', 'transcript_path': str(ctr)}), env=dict(TEAM_SYNC_FOREGROUND='1', CODEX_HOME=str(chome)))
@@ -527,6 +529,11 @@ def run(cfg, keep=False):
     out = ts(C, 'start')
     check('recipient gets it at session start, framed as not from the user', 'selftest 留言一' in out and '📨' in out)
     check('delivered once only', 'selftest 留言一' not in ts(C, 'start'))
+    m1 = next(iter(sorted((C / json.loads((C / CONFIG_NAME).read_text(encoding='utf-8'))['inbox']['dir'] / 'carol').glob('*.md'))), None)
+    mt = m1.read_text(encoding='utf-8') if m1 else ''
+    check('the message: header time with the zone, sent and read times stored with the offset',
+          re.search(r'\*\*alice → carol · \d{2}-\d{2} \d{2}:\d{2} UTC[+-]', mt) is not None and re.search(r'"at": "[^"]+[+-]\d{2}:\d{2}"', mt) is not None
+          and re.search(r'"read": "[^"]+[+-]\d{2}:\d{2}"', mt) is not None, mt[:200].replace('\n', ' | '))
     ts(A, 'msg', 'send', 'carol', 'selftest 留言二'); ts(A, 'stop')
     ts(C, 'stop')                                             # what autosync or a turn end does
     seen_f = C / '.git' / 'team-sync' / 'inbox_notified'

@@ -17,6 +17,7 @@ import urllib.request
 
 from .config import Config
 from .net import ssl_context
+from . import clock
 from .msg import t
 
 
@@ -87,7 +88,7 @@ class lease:
                 break
             if time.time() >= deadline:
                 raise SystemExit(t(self.cfg.lang, 'lease_busy', resource=self.resource, holder=r.get('holder'),
-                                   expires=r.get('expires_at'), note=r.get('note') or '-'))
+                                   expires=clock.show(r.get('expires_at') or '', '%Y-%m-%d %H:%M'), note=r.get('note') or '-'))
             time.sleep(15)
         threading.Thread(target=self._keepalive, daemon=True).start()
         return self
@@ -117,7 +118,7 @@ def cli(ns, cfg):
             if not rows:
                 print(t(cfg.lang, 'lease_none')); return 0
             for x in rows:
-                print(f"{x['resource']:32} {x['holder']:28} expires {x['expires_at'][:19]}  {x.get('note') or ''}")
+                print(f"{x['resource']:32} {x['holder']:28} expires {clock.show(x['expires_at'], '%Y-%m-%d %H:%M')}  {x.get('note') or ''}")
             return 0
         fn = {'acquire': lambda: acquire(ns.resource, ns.ttl, ns.note, cfg),
               'renew': lambda: renew(ns.resource, ns.ttl, cfg),

@@ -14,6 +14,8 @@ A message is relayed to the person, never executed by their agent: anyone who ca
 steer a teammate's agent, and the person would not know why it acted.
 """
 import datetime as dt
+
+from . import clock
 import json
 import re
 
@@ -72,8 +74,8 @@ def send(cfg, to, text):
         k = 2
         while p.exists():
             p = d / n / f'{now:%Y-%m-%d_%H%M%S}_{me}_{k}.md'; k += 1
-        meta = {'from': me, 'to': n, 'at': now.isoformat(timespec='seconds'), 'read': None}
-        _write(p, meta, f'**{me} → {n} · {now:%m-%d %H:%M}**\n\n{text}\n')
+        meta = {'from': me, 'to': n, 'at': clock.iso(now), 'read': None}
+        _write(p, meta, f'**{me} → {n} · {clock.stamp(now.astimezone(), "%m-%d %H:%M")}**\n\n{text}\n')
         out.append((n, p))
     for n, p in out:
         print(t(cfg.lang, 'inbox_sent', to=n, path=p.relative_to(cfg.repo).as_posix()))
@@ -102,10 +104,10 @@ def deliver(cfg):
                 items.append((p, meta, body))
         if not items:
             return ''
-        now = dt.datetime.now().isoformat(timespec='seconds')
+        now = clock.iso()
         lines = [t(cfg.lang, 'inbox_head')]
         for p, meta, body in items:
-            at = (meta.get('at') or '')[5:16].replace('T', ' ')
+            at = clock.show(meta.get('at') or '')
             msg = _text(body).replace('\n', '\n      ')
             lines.append(t(cfg.lang, 'inbox_item', frm=meta.get('from', '?'), at=at, text=msg))
             meta['read'] = now; meta['read_by'] = cfg.holder_prefix()
@@ -164,8 +166,9 @@ def receipts(cfg, since):
         meta, _ = _read(p)
         if not meta or meta.get('from') != me:
             continue
-        if meta.get('read') and meta['read'] >= since:
-            got.append(f"{meta.get('to')} {meta['read'][5:16].replace('T', ' ')}")
+        read, since_d = clock.parse(meta.get('read')), clock.parse(since)
+        if read and (since_d is None or read >= since_d):
+            got.append(f"{meta.get('to')} {clock.show(meta['read'])}")
         elif not meta.get('read'):
             waiting.append(meta.get('to', '?'))
     out = []
@@ -184,8 +187,8 @@ def list_cli(cfg):
     for p in sorted(d.glob('*/*.md')) if d.exists() else []:
         meta, body = _read(p)
         if meta and me in (meta.get('from'), meta.get('to')):
-            state = t(cfg.lang, 'inbox_state_read', at=meta['read'][5:16].replace('T', ' ')) if meta.get('read') else t(cfg.lang, 'inbox_state_unread')
+            state = t(cfg.lang, 'inbox_state_read', at=clock.show(meta['read'])) if meta.get('read') else t(cfg.lang, 'inbox_state_unread')
             first = _text(body).split('\n')[0][:60]
-            rows.append(f"{(meta.get('at') or '')[5:16].replace('T', ' ')}  {meta.get('from')} → {meta.get('to')}  [{state}]  {first}")
+            rows.append(f"{clock.show(meta.get('at') or '')}  {meta.get('from')} → {meta.get('to')}  [{state}]  {first}")
     print('\n'.join(rows[-20:]) if rows else t(cfg.lang, 'none'))
     return 0

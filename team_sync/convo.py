@@ -149,7 +149,9 @@ def _claude(d):
         s = _user_text(c)
         return [(ts, 'user', s)] if s else []
     if typ == 'assistant' and m.get('model') != '<synthetic>' and isinstance(c, list):
-        out = [(ts, 'model', m['model'])] if isinstance(m.get('model'), str) and m['model'].strip() else []   # 0.1.37+
+        eff = d.get('effort') or d.get('perTurnEffort')         # the model (and reasoning effort) of the reply (0.1.37+)
+        name = m['model'].strip() + (f' ({eff})' if isinstance(eff, str) and eff.strip() else '') if isinstance(m.get('model'), str) and m['model'].strip() else ''
+        out = [(ts, 'model', name)] if name else []
         parts = []
         for b in c:
             if not isinstance(b, dict):
@@ -1239,7 +1241,7 @@ def recent(cfg, n=5):
     rows.sort(key=lambda r: r[0], reverse=True)
     lines = [f"   {_local(last)} · {h.get('who')} · {AGENT_LABEL.get(h.get('agent'), h.get('agent'))} · "
              f"{_cut(h.get('title') or '', 40)} → {p.relative_to(cfg.repo).as_posix()}" for last, h, p in rows[:n]]
-    return (t(cfg.lang, 'convo_recent') + '\n' + '\n'.join(lines)) if lines else ''
+    return (t(cfg.lang, 'convo_recent', tz=_tz(dt.datetime.now(dt.timezone.utc).isoformat())) + '\n' + '\n'.join(lines)) if lines else ''
 
 
 # ---------------------------------------------------------------- header format and README (0.1.34+)
