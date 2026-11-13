@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.38 (2026-11-14)
+
+- Attachment notes no longer read as Markdown links. In Chinese records a note followed its attachment as `[图片: …](说明: …)`, which a Markdown reader renders as a link; it is now `[图片: …]（说明：…）` with full-width brackets. (English records already had a space before the bracket, which no reader takes for a link.)
+- At session start each machine rewrites the notes in its own records written the old way, using the notes kept in the front matter. Selftest step 7 covers both.
+
 ## 0.1.37 (2026-11-14)
 
 - Records name the model. A new front-matter field `models` lists every model the agent used in the session, in order of first use, as the agent's own log names it: Claude Code's from each reply, Codex's from each turn's context, each with its reasoning effort in brackets (`claude-opus-5-5 (high)`, `gpt-5.6-terra (high)`). When the model changes mid-session, a line `> time · ⇄ …` marks the place in the verbatim text.

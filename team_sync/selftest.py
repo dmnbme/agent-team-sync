@@ -331,6 +331,10 @@ def run(cfg, keep=False):
             f'{k} ' + ('后台纠错页截图,点采纳后仍显示待处理' if k.startswith('img:') else '网站待改清单,这次按它改了首页') for k in keys))
         body = rec.read_text(encoding='utf-8')
         check('notes appear next to the image and the file', '点采纳后仍显示待处理' in body and '按它改了首页' in body, out[:80])
+        check('a note is not written as a Markdown link "[…](…)"', '](' not in body and '（说明：后台纠错页截图' in body, body[-200:].replace('\n', ' '))
+        rec.write_text(body.replace('（说明：后台纠错页截图,点采纳后仍显示待处理）', '(说明: 后台纠错页截图,点采纳后仍显示待处理)'), encoding='utf-8')
+        ts(A, 'start')
+        check('start rewrites a note left in the old link form', '](说明' not in rec.read_text(encoding='utf-8') and '（说明：后台纠错页截图' in rec.read_text(encoding='utf-8'))
         out = ts(A, 'hook', 'claude', 'stop', stdin=astdin(), env=denv)
         check('no new request once noted; the notes survive the next turn', out.strip() == '{}' and '按它改了首页' in rec.read_text(encoding='utf-8'), out[:80])
     tp = tmp / 'claude-attach-paused.jsonl'

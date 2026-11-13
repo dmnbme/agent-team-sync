@@ -224,7 +224,7 @@ _T = {
         'convo_att_dir': '对话附件',
         'convo_image': '[图片: {path}]',
         'convo_local_file': '[本机文件: {fname}]',
-        'convo_note_suffix': '(说明: {note})',
+        'convo_note_suffix': '（说明：{note}）',   # full-width: "[…](…)" would render as a Markdown link (0.1.38+)
         'convo_note_item_image': '用户 {when} 贴的图片',
         'convo_note_item_file': '仓库和共享盘以外的文件:{fname}',
         'remind_ask': (

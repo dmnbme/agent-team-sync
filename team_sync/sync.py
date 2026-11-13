@@ -403,10 +403,11 @@ def _start_body(cfg, pull_ok=True):
     except Exception as e:
         lines.append(f'fingerprint: check failed ({e})')
     try:
-        from .convo import recent, reformat, readme, relocate
+        from .convo import recent, reformat, readme, relocate, renote
         readme(cfg)                                               # the records folder's README, kept to this version's format
         relocate(cfg)                                             # this person's records still directly in <YYYY-MM>/: into <YYYY-MM>/<who>/
         reformat(cfg)                                             # this person's records still in the old header format
+        renote(cfg)                                               # attachment notes written as Markdown links (before 0.1.38)
         rc = recent(cfg)
         if rc:
             lines.append(rc)

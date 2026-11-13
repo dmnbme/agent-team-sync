@@ -1276,6 +1276,37 @@ def reformat(cfg):
     return n
 
 
+OLD_NOTE_SUFFIX = {'zh': '(说明: {note})'}                    # before 0.1.38: right after "]", a Markdown link to the reader
+
+
+def renote(cfg):
+    """Notes on attachments written as "[图片: …](说明: …)" before 0.1.38 render as links in a Markdown reader; rewrite
+    them in the current form. Only this person's own records, for the same reason as reformat(). Returns how many changed."""
+    old = OLD_NOTE_SUFFIX.get(cfg.lang)
+    d = _dir(cfg)
+    root = cfg.repo / d if d else None
+    if not old or not root or not root.is_dir():
+        return 0
+    n = 0
+    for f in _records(root):
+        try:
+            s = f.read_text(encoding='utf-8')
+        except OSError:
+            continue
+        if '](' not in s:
+            continue
+        head = _head_of(s)
+        if not head or head.get('who') != cfg.who() or not head.get('notes'):
+            continue
+        new = s
+        for note in head['notes'].values():
+            new = new.replace(']' + old.format(note=note), ']' + t(cfg.lang, 'convo_note_suffix', note=note))
+        if new != s:
+            _write(cfg, f, new)
+            n += 1
+    return n
+
+
 def relocate(cfg):
     """Records this person wrote before 0.1.35 sit directly in <YYYY-MM>/; move each into <YYYY-MM>/<who>/ with the same
     file name, and update what points at them: the links in their headers (continued_from, prev_month, next_month) and
