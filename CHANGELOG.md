@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.37 (2026-11-14)
+
+- Records name the model. A new front-matter field `models` lists every model the agent used in the session, in order of first use, as the agent's own log names it: Claude Code's model id from each reply, Codex's model from each turn's context with the reasoning effort in brackets (`gpt-5.6-terra (high)`). When the model changes mid-session, a line `> time · ⇄ …` marks the place in the verbatim text.
+- A session recorded before 0.1.37 looks once through the part of its transcript already recorded, so its list starts complete.
+- The records README explains the field. Selftest 7f covers it.
+
 ## 0.1.36 (2026-11-06)
 
 - Turn-end reminders (`"remind"` in `team-sync.json`, Claude Code and Codex). When a session changed files in the team repository, the Stop hook asks the agent once to decide whether the work deserves a journal note, and, for each knowledge file mapped to the changed paths (`remind.docs`), whether that file needs updating. The agent decides; the hook only notices.

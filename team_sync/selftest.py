@@ -448,6 +448,20 @@ def run(cfg, keep=False):
     ts(A, 'hook', 'claude', 'stop', stdin=tstdin)
     rt = rf.read_text(encoding='utf-8')
     check('topics and the title survive the next turn', '"起标题"' in fmt(rt) and ttl(rt) == '我改的名字' and '第四句' in rt)
+    stc7 = A / '.git' / 'team-sync' / 'convo' / 'claude_titled1.json'           # as if recorded before 0.1.37: no models kept yet
+    st7 = json.loads(stc7.read_text(encoding='utf-8')); st7.pop('models', None); st7.pop('model', None)
+    stc7.write_text(json.dumps(st7, ensure_ascii=False), encoding='utf-8')
+    jsonl(tt, [cu('2026-01-10T01:04:00.000Z', '第五句'),
+               {'type': 'assistant', 'timestamp': '2026-01-10T01:04:05.000Z', 'message': {'role': 'assistant', 'model': 'model-two', 'content': [tx('换了个模型回答。')]}}])
+    ts(A, 'hook', 'claude', 'stop', stdin=tstdin)
+    rt = rf.read_text(encoding='utf-8')
+    check('models: the earlier model found once in the transcript, the new one added, the switch marked in the text',
+          'models: ["x", "model-two"]' in fmt(rt) and re.search(r'^> .*⇄.*model-two', rt, re.M) is not None, fmt(rt)[:300].replace('\n', ' | '))
+    jsonl(ctr, [{'timestamp': '2026-01-10T02:00:02.000Z', 'type': 'turn_context', 'payload': {'model': 'gpt-test', 'effort': 'high'}},
+                {'timestamp': '2026-01-10T02:00:03.000Z', 'type': 'response_item', 'payload': {'type': 'message', 'role': 'assistant', 'content': [{'type': 'output_text', 'text': 'codex 回答'}]}}])
+    ts(A, 'hook', 'codex', 'stop', stdin=json.dumps({'session_id': 'codextitle1', 'transcript_path': str(ctr)}), env=dict(TEAM_SYNC_FOREGROUND='1', CODEX_HOME=str(chome)))
+    ct = ''.join(f.read_text(encoding='utf-8') for f in (A / cdir).glob('*/*/*_codex_codextit*.md'))
+    check('Codex: the model with its reasoning effort; the first model is no switch', 'models: ["gpt-test (high)"]' in fmt(ct) and '⇄' not in ct, fmt(ct)[:300].replace('\n', ' | '))
     oldrec = lambda who, sid: (f'# 对话记录 · {who} · Claude Code · 2026-01-11 开始\n<!-- team-sync-convo ' + json.dumps(
         {'session': sid, 'agent': 'claude', 'who': who, 'title': '旧格式', 'start': '2026-01-11T00:00:00.000Z', 'last': '2026-01-11T00:00:05.000Z',
          'through': '', 'notes': {'img:0123456789abcdef.png': '旧说明'}}, ensure_ascii=False) + ' -->\n\n> team-sync 在每轮对话结束时自动写入。\n> 第一句: 旧格式\n\n'
@@ -474,7 +488,7 @@ def run(cfg, keep=False):
           and '2026-02/alice/2026-02-11_alice_claude_oldfmt1' in out, out[-500:].replace('\n', ' | '))
     rd = A / cdir / 'README.md'
     rdt = rd.read_text(encoding='utf-8') if rd.exists() else ''
-    check('the records folder has a README explaining every front-matter field', 'attachment_notes' in rdt and 'summarized_through' in rdt and 'topics' in rdt and 'convo-readme' in rdt)
+    check('the records folder has a README explaining every front-matter field', 'attachment_notes' in rdt and 'summarized_through' in rdt and 'topics' in rdt and '| models |' in rdt and 'convo-readme' in rdt)
     rd.write_text(rdt.replace(re.search(r'convo-readme [\d.]+', rdt).group(0), 'convo-readme 99.0.0') if rdt else '', encoding='utf-8')
     ts(A, 'start')
     check("a newer version's README is not replaced by an older one", 'convo-readme 99.0.0' in rd.read_text(encoding='utf-8'))

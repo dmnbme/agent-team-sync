@@ -149,6 +149,7 @@ def _claude(d):
         s = _user_text(c)
         return [(ts, 'user', s)] if s else []
     if typ == 'assistant' and m.get('model') != '<synthetic>' and isinstance(c, list):
+        out = [(ts, 'model', m['model'])] if isinstance(m.get('model'), str) and m['model'].strip() else []   # 0.1.37+
         parts = []
         for b in c:
             if not isinstance(b, dict):
@@ -160,7 +161,7 @@ def _claude(d):
                     opts = [f"- {o.get('label', '')}: {o.get('description', '')}" for o in q.get('options') or [] if isinstance(o, dict)]
                     parts.append('\n'.join([f"[question] {q.get('question', '')}"] + opts))
         s = '\n\n'.join(parts)
-        return [(ts, 'agent', s)] if s else []
+        return out + ([(ts, 'agent', s)] if s else [])
     return []
 
 
@@ -183,8 +184,19 @@ def _codex_mentions(s):
     return '\n'.join(refs) + ('\n\n' if refs and body else '') + body
 
 
+def _codex_model(p):
+    mode = ((p.get('collaboration_mode') or {}).get('settings') or {}) if isinstance(p.get('collaboration_mode'), dict) else {}
+    model = p.get('model') or mode.get('model')
+    effort = p.get('effort') or p.get('reasoning_effort') or mode.get('reasoning_effort')
+    if not isinstance(model, str) or not model.strip():
+        return ''
+    return f'{model.strip()} ({effort})' if isinstance(effort, str) and effort.strip() else model.strip()
+
+
 def _codex(d):
     p = d.get('payload') or {}
+    if d.get('type') == 'turn_context':                           # the model (and reasoning effort) of the turn (0.1.37+)
+        return [(d.get('timestamp') or '', 'model', _codex_model(p))] if _codex_model(p) else []
     if d.get('type') == 'event_msg' and p.get('type') == 'thread_rolled_back':   # the user stepped back N turns
         return [(d.get('timestamp') or '', 'rollback', str(int(p.get('num_turns') or 0)))]
     if d.get('type') != 'response_item' or p.get('type') != 'message' or p.get('role') not in ('user', 'assistant'):
@@ -349,7 +361,7 @@ def _records(root):
 # The record's header (0.1.34+): YAML front matter. Simple values are written plain, anything else as JSON (a subset of
 # YAML), so the file stays readable and any YAML reader can load it; this module parses its own output without PyYAML.
 # The meaning of each field is in the README the tool keeps in the records folder (convo_readme).
-FRONT = (('title', 'title'), ('topics', 'topics'), ('who', 'who'), ('agent', 'agent'), ('started', 'start'),
+FRONT = (('title', 'title'), ('topics', 'topics'), ('who', 'who'), ('agent', 'agent'), ('models', 'models'), ('started', 'start'),
          ('updated', 'last'), ('timezone', None), ('continued_from', 'parent'), ('prev_month', 'prev'),
          ('next_month', 'next'), ('session', 'session'), ('earlier_sessions', 'earlier_sessions'),
          ('summarized_through', 'summarized'), ('hidden_through', 'through'), ('attachment_notes', 'notes'))
@@ -821,6 +833,8 @@ def _head(cfg, agent, sid, st, msgs, prev):
     title = titles.get('custom') or titles.get('ai') or titles.get('app') or _cut(first_user) or prev.get('title', '')
     head = {'session': sid, 'agent': agent, 'who': cfg.who(), 'title': title,
             'start': msgs[0][0], 'last': msgs[-1][3], 'through': prev.get('through') or ''}
+    if st.get('models'):                                          # every model the session used, in order (0.1.37+)
+        head['models'] = st['models']
     if prev.get('topics'):                                        # kept up to date by the agent when it compacts (0.1.34+)
         head['topics'] = prev['topics']
     if prev.get('summarized'):                                    # summarized up to here; the verbatim text stays (0.1.25+)
@@ -869,6 +883,35 @@ def _continue(cfg, st, me, owner, last_copied):
     st['parent'] = st.get('chain_parent')
 
 
+def _models(cfg, st, items):
+    """Model items → the session's list of models (front matter) and, when the model changes mid-session, a note line."""
+    out = []
+    for item in items:
+        if item[1] != 'model':
+            out.append(item)
+            continue
+        name = item[2]
+        models = st.setdefault('models', [])
+        if name not in models:
+            models.append(name)
+        if st.get('model') and st['model'] != name:
+            out.append((item[0], 'note', t(cfg.lang, 'convo_model_note', model=name)) + tuple(item[3:]))
+        st['model'] = name
+    return out
+
+
+def _models_before(st, tpath, agent, new):
+    """For a session recorded before models were kept: the models of the part already read, so the list starts complete."""
+    first = next((i[0] for i in new), None)
+    seen = []
+    for iso, role, text, *_ in _read(tpath, 0, PARSERS[agent])[0]:
+        if role == 'model' and (first is None or iso < first) and text not in seen:
+            seen.append(text)
+        if role == 'model' and (first is None or iso < first):
+            st['model'] = text
+    st['models'] = seen
+
+
 def update(cfg, agent, data, idx=None):
     """Turn-end hook body. Returns None, or the text of a request asking the agent to compact the record."""
     c = recording(cfg)
@@ -890,6 +933,8 @@ def update(cfg, agent, data, idx=None):
         if item[1].startswith('title_'):
             st.setdefault('titles', {})[item[1][6:]] = item[2]
     new = [item for item in new if not item[1].startswith('title_')]
+    if 'models' not in st and st.get('msgs'):
+        _models_before(st, tpath, agent, new)                     # a session recorded before 0.1.37: look once through what was read
     if agent == 'codex':
         name = _codex_title(sid)
         if name:
@@ -918,7 +963,7 @@ def update(cfg, agent, data, idx=None):
         _continue(cfg, st, me, st.get('continues') or copied[0], None if st.get('continues') else copied[1])
     if st.get('continued_by'):                                    # a branch of the session that took over its file
         st['parent'] = st['continued_by']
-    new = own
+    new = _models(cfg, st, own)
     _apply(cfg, st, new)
     held = {h[2] for h in st.get('held') or []}                    # paused: kept on this machine only, images too
     for iso, role, text, *_ in new:
